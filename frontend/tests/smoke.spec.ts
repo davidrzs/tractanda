@@ -52,3 +52,41 @@ test('map, commune navigation, document list, original sources and language cont
   await page.screenshot({ path: 'test-results/home-mobile.png', fullPage: true });
   expect(errors).toEqual([]);
 });
+
+test('a canton lists its communes and is linked from the start and commune pages', async ({
+  page
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/de');
+  const cantons = page.getByRole('navigation', { name: 'Gemeinden nach Kanton' });
+  await expect(cantons.getByRole('link')).toHaveCount(26);
+  await expect(cantons.getByRole('link', { name: 'Kanton Zürich' })).toHaveAttribute(
+    'href',
+    '/de/kantone/zh'
+  );
+  await page.goto('/de/gemeinden/121');
+  // the commune page keeps the server's title, as search engines index it after the app ran
+  await expect(page).toHaveTitle(
+    'Wetzikon: Protokolle, Traktanden und Budgets der Gemeinde — Tractanda'
+  );
+  await page.getByRole('link', { name: 'Kanton Zürich' }).click();
+  await expect(page).toHaveURL(/\/de\/kantone\/zh$/);
+  await expect(page.getByRole('heading', { name: 'Kanton Zürich', level: 1 })).toBeVisible();
+  await expect(page).toHaveTitle(
+    'Kanton Zürich: Protokolle, Traktanden und Budgets der Gemeinden — Tractanda'
+  );
+  await expect(page.locator('.canton-count')).toContainText('Gemeinden mit gesammelten Dokumenten');
+  await expect(page.locator('.communes-list a[href="/de/gemeinden/121"]')).toContainText(
+    'Wetzikon'
+  );
+  expect((await page.locator('.mini-map svg').boundingBox())!.width).toBeGreaterThan(200);
+  await page.screenshot({ path: 'test-results/canton-desktop.png', fullPage: true });
+  await page.getByRole('link', { name: 'EN', exact: true }).click();
+  await expect(page).toHaveURL(/\/en\/kantone\/zh$/);
+  await expect(page.getByRole('heading', { name: 'Canton of Zurich', level: 1 })).toBeVisible();
+  // an unknown canton is the error page
+  await page.goto('/de/kantone/xx');
+  await expect(page.getByRole('heading', { name: 'Kanton Zürich' })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

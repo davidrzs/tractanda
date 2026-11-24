@@ -1,5 +1,5 @@
 //! The pages search engines and AI assistants read (`site.rs`): `robots.txt`, `sitemap.xml`,
-//! `llms.txt`, and the HTML of the start, commune, about, privacy and search pages.
+//! `llms.txt`, and the HTML of the start, commune, canton, about, privacy and search pages.
 
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, header};
@@ -9,7 +9,7 @@ use serde_json::json;
 use crate::AppState;
 use crate::db::pages;
 use crate::error::ApiError;
-use crate::site::{Lang, Page, date, escape};
+use crate::site::{Lang, Page, canton_name, canton_path, date, escape};
 
 const SOURCE: &str = "https://github.com/davidrzs/tractanda";
 const DATASET: &str = "https://huggingface.co/datasets/davidrzs/tractanda";
@@ -39,8 +39,8 @@ pub async fn robots(State(state): State<AppState>) -> Response {
 }
 
 /// Every page in every language: the start, about, privacy, API and licences pages, and every
-/// commune once their pages may be indexed. One file holds at most 50,000 addresses; past that the
-/// sitemap needs an index.
+/// commune and canton with documents once their pages may be indexed. One file holds at most
+/// 50,000 addresses; past that the sitemap needs an index.
 pub async fn sitemap(State(state): State<AppState>) -> Result<Response, ApiError> {
     let mut paths: Vec<String> = ["", "/ueber-uns", "/datenschutz", "/api", "/lizenzen"]
         .map(String::from)
@@ -48,6 +48,8 @@ pub async fn sitemap(State(state): State<AppState>) -> Result<Response, ApiError
     if state.site.index_communes {
         let communes = pages::sitemap(&state.db).await?;
         paths.extend(communes.iter().map(|id| format!("/gemeinden/{id}")));
+        let cantons = pages::cantons_with_documents(&state.db).await?;
+        paths.extend(cantons.iter().map(|code| canton_path(code)));
     }
     let mut xml = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
@@ -189,8 +191,17 @@ pub async fn home(state: AppState, lang: Lang) -> Result<Response, ApiError> {
         "<h1>Tractanda</h1><p>{}</p><p>{}</p><h2>{}</h2><ul>",
         escape(w.site),
         escape(&totals),
-        escape(w.with_documents)
+        escape(w.cantons)
     );
+    for code in pages::cantons_with_documents(&state.db).await? {
+        facts.push_str(&format!(
+            "<li><a href=\"/{}{}\">{}</a></li>",
+            lang.code(),
+            canton_path(&code),
+            escape(canton_name(&code, lang).unwrap_or(&code))
+        ));
+    }
+    facts.push_str(&format!("</ul><h2>{}</h2><ul>", escape(w.with_documents)));
     for c in pages::communes_with_documents(&state.db).await? {
         facts.push_str(&format!(
             "<li><a href=\"/{}/gemeinden/{}\">{} ({})</a></li>",
@@ -222,13 +233,12 @@ pub async fn home(state: AppState, lang: Lang) -> Result<Response, ApiError> {
             "spatialCoverage": {"@type": "Place", "name": "Switzerland"},
             "creator": {"@type": "Person", "name": "David Zollikofer"},
             "sameAs": [SOURCE, DATASET],
-            "distribution": [
-                {
-                    "@type": "DataDownload",
-                    "encodingFormat": "application/json",
-                    "contentUrl": format!("{}/api/documents", state.site.public_url),
-                },
-            ],
+            // the open data is published on Hugging Face; the API is closed to crawlers
+            "includedInDataCatalog": {
+                "@type": "DataCatalog",
+                "name": "Hugging Face",
+                "url": "https://huggingface.co/datasets",
+            },
         })),
         facts,
         noindex: false,
@@ -257,7 +267,15 @@ pub async fn commune(state: AppState, lang: Lang, id: String) -> Result<Response
         ],
     );
     let website = c.website.as_deref().filter(|w| !w.is_empty());
-    let mut facts = format!("<h1>{}</h1><p>{}</p>", escape(&c.name), escape(&line));
+    let canton = canton_name(&c.canton, lang).unwrap_or(&c.canton);
+    let mut facts = format!(
+        "<h1>{}</h1><p>{}</p><p><a href=\"/{}{}\">{}</a></p>",
+        escape(&c.name),
+        escape(&line),
+        lang.code(),
+        canton_path(&c.canton),
+        escape(canton)
+    );
     if let Some(site) = website {
         facts.push_str(&format!(
             "<p><a href=\"{}\">{}</a></p>",
@@ -302,7 +320,11 @@ pub async fn commune(state: AppState, lang: Lang, id: String) -> Result<Response
         "@type": "AdministrativeArea",
         "name": c.name,
         "identifier": {"@type": "PropertyValue", "propertyID": "BFS", "value": c.bfs_id},
-        "containedInPlace": {"@type": "AdministrativeArea", "name": c.canton},
+        "containedInPlace": {
+            "@type": "AdministrativeArea",
+            "name": canton,
+            "url": state.site.url(lang, &canton_path(&c.canton)),
+        },
         "url": state.site.url(lang, &path),
     });
     if let Some(site) = website {
@@ -345,6 +367,59 @@ pub async fn commune(state: AppState, lang: Lang, id: String) -> Result<Response
         facts,
         // a commune without documents has nothing to find yet
         noindex: !state.site.index_communes || c.documents == 0,
+    };
+    Ok(html(&state, StatusCode::OK, &page).await)
+}
+
+/// A canton: its communes with documents, each linked to its page. `code` is the canton's code in
+/// lower case, as the links write it.
+pub async fn canton(state: AppState, lang: Lang, code: String) -> Result<Response, ApiError> {
+    let path = format!("/kantone/{code}");
+    let name = canton_name(&code, lang).filter(|_| code.bytes().all(|b| b.is_ascii_lowercase()));
+    let Some(name) = name else {
+        return Ok(not_found(&state, lang, path).await);
+    };
+    let w = lang.words();
+    let communes = pages::canton(&state.db, &code).await?;
+    let with_documents: Vec<_> = communes.iter().filter(|c| c.documents > 0).collect();
+    let values = [
+        ("name", name.to_string()),
+        ("communes", lang.number(with_documents.len() as i64)),
+    ];
+    let mut facts = format!(
+        "<h1>{}</h1><p>{}</p>",
+        escape(name),
+        escape(&fill(w.canton_line, &values))
+    );
+    if !with_documents.is_empty() {
+        facts.push_str(&format!("<h2>{}</h2><ul>", escape(w.communes)));
+        for c in &with_documents {
+            facts.push_str(&format!(
+                "<li><a href=\"/{}/gemeinden/{}\">{}</a> ({})</li>",
+                lang.code(),
+                c.bfs_id,
+                escape(&c.name),
+                lang.number(c.documents)
+            ));
+        }
+        facts.push_str("</ul>");
+    }
+    let page = Page {
+        lang,
+        title: format!("{} — Tractanda", fill(w.canton_title, &values)),
+        description: fill(w.canton_description, &values),
+        json_ld: Some(json!({
+            "@context": "https://schema.org",
+            "@type": "AdministrativeArea",
+            "name": name,
+            "identifier": code.to_ascii_uppercase(),
+            "containedInPlace": {"@type": "Country", "name": "Switzerland"},
+            "url": state.site.url(lang, &path),
+        })),
+        path,
+        facts,
+        // like a commune's page: nothing to find without documents
+        noindex: !state.site.index_communes || with_documents.is_empty(),
     };
     Ok(html(&state, StatusCode::OK, &page).await)
 }

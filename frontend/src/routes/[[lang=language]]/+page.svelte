@@ -1,6 +1,8 @@
 <script lang="ts">
   import { copy, href, fmt, type Lang } from '$lib/i18n';
   import { DATASET_URL, MCP_COMMAND, SOURCE_URL, docs, start } from '$lib/copy/start';
+  import { canton as cantonTexts } from '$lib/copy/canton';
+  import { commune as communeTexts } from '$lib/copy/commune';
   import { askCopy } from '$lib/copy/ask';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -57,6 +59,8 @@
       .sort((a, b) => b.documents - a.documents || a.name.localeCompare(b.name, lang))
   );
   let cantons = $derived([...new Set(communes.map((c) => c.canton))].sort());
+  // every canton's page, in the federal order ("Canton de", "Canton d’" would sort French names apart)
+  let cantonNames = $derived(Object.entries(communeTexts[lang].cantons));
 
   let copied = $state(false);
   function copyCommand() {
@@ -240,6 +244,17 @@
         </div>
       </div>
     </div>
+    <nav class="cantons mt-14" aria-labelledby="cantons-title">
+      <h3 id="cantons-title" class="text-sm font-medium">{cantonTexts[lang].byCanton}</h3>
+      <ul class="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        {#each cantonNames as [code, name] (code)}<li>
+            <a
+              class="rounded-sm text-zinc-700 underline decoration-zinc-300 underline-offset-4 outline-none hover:text-foreground hover:decoration-zinc-900 focus-visible:ring-2 focus-visible:ring-ring"
+              href={href(`/kantone/${code.toLowerCase()}`, lang)}>{name}</a
+            >
+          </li>{/each}
+      </ul>
+    </nav>
   </div>
 </section>
 

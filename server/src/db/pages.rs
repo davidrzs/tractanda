@@ -1,10 +1,10 @@
-//! What the crawler-facing pages read: the archive's totals, the communes with documents, the
-//! sitemap's communes and a commune page's facts.
+//! What the crawler-facing pages read: the archive's totals, the communes and cantons with
+//! documents, the sitemap's communes and the facts of a commune or canton page.
 
 use sqlx::SqlitePool;
 
 use crate::db::{communes, documents};
-use crate::models::{CommuneDetail, CommuneRef, DocumentPage, PageTotals};
+use crate::models::{BriefCommune, CommuneDetail, CommuneRef, DocumentPage, PageTotals};
 
 /// Documents and the communes that link them.
 pub async fn totals(pool: &SqlitePool) -> sqlx::Result<PageTotals> {
@@ -36,6 +36,21 @@ pub async fn sitemap(pool: &SqlitePool) -> sqlx::Result<Vec<i64>> {
     )
     .fetch_all(pool)
     .await
+}
+
+/// The cantons with documents, by code.
+pub async fn cantons_with_documents(pool: &SqlitePool) -> sqlx::Result<Vec<String>> {
+    sqlx::query_scalar(
+        "SELECT DISTINCT c.canton FROM communes c WHERE EXISTS \
+         (SELECT 1 FROM document_communes dc WHERE dc.bfs_id = c.bfs_id) ORDER BY c.canton",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// A canton's communes by name, each with its documents.
+pub async fn canton(pool: &SqlitePool, code: &str) -> sqlx::Result<Vec<BriefCommune>> {
+    communes::brief(pool, Some(code), None).await
 }
 
 /// A commune with the first page of its documents, as `/api/documents?commune=` gives it; None

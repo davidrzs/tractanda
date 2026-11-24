@@ -74,7 +74,7 @@ pub fn app(state: AppState, static_dir: &Path, mcp_allowed_hosts: &[String]) -> 
         .layer(middleware::from_fn_with_state(state.clone(), usage::count))
         .layer(middleware::from_fn_with_state(
             state.clone(),
-            site::former_hosts,
+            site::redirects,
         ))
         .layer(trace)
         .layer(CompressionLayer::new())

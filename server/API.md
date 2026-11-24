@@ -25,9 +25,9 @@ DATABASE_PATH=data/opencommune.db STATIC_DIR=frontend/build server/target/releas
 | `USAGE_TOKEN` | none | token of the operator's report `GET /api/usage` (at least 32 characters); without it the report answers 404 |
 | `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` | `Host` values `/mcp` accepts; add the public domains |
 | `PUBLIC_URL` | `http://` + `BIND` | the site's address in canonical links, the sitemap and `llms.txt` |
-| `FORMER_HOSTS` | none | comma-separated former names of the site: a request to one is answered with a 308 to the same path under `PUBLIC_URL` and counted under that name |
+| `FORMER_HOSTS` | none | comma-separated former names of the site: a request to one is answered with a 308 to the same path under `PUBLIC_URL` (a page path without a language to the German page) and counted under that name |
 | `SEARCH_INDEXING` | `false` | `true`: search engines may index the pages; `false`: every response says `noindex` |
-| `SEARCH_INDEX_COMMUNES` | `false` | `true`: the commune pages may be indexed too and join the sitemap; `false`: they say `noindex` |
+| `SEARCH_INDEX_COMMUNES` | `false` | `true`: the commune and canton pages may be indexed too and join the sitemap; `false`: they say `noindex` |
 | `RUST_LOG` | `info,rmcp=warn` | log filter; `debug` logs one line per request (route template only) |
 | `ASK_API_KEY` | none | the chatbot's model key; without it `/api/ask` answers 503 (`off`) |
 | `ASK_PROVIDER` | `anthropic` | `anthropic` (Messages API) or `openai` (any OpenAI-compatible endpoint, such as the CSCS inference platform) |
@@ -394,26 +394,34 @@ table.
 ## Pages for search engines and AI assistants
 
 The front end renders in the browser. For the pages below the server puts the facts into the HTML
-it sends: title, description, canonical link, links to the other two languages, schema.org JSON-LD
+it sends: title, description, canonical link, links to the other languages, schema.org JSON-LD
 where it fits, and a fact sheet in `<main id="oc-facts">` that the app replaces on start. Every
 visitor receives the same HTML.
 
-1. `/{lang}` (`de`, `fr`, `it`): the number of documents and of the communes that link them (with
-   the note that no person has checked the classification), and the communes with documents
-   (JSON-LD `Dataset`). `/` redirects to `/de`.
+1. `/{lang}` (`de`, `fr`, `it`, `en`): the number of documents and of the communes that link them
+   (with the note that no person has checked the classification), the cantons and the communes
+   with documents (JSON-LD `Dataset`, listed in the Hugging Face catalogue). `/` redirects to the
+   browser's language, else `/de`.
 2. `/{lang}/gemeinden/{bfs_id}`: the commune's number of documents, website, documents per year
    and the first page of `/api/documents?commune=<bfs_id>` (the twenty newest documents, title and
-   date, linked through `<PUBLIC_URL>/original/<sha256>?commune=<bfs_id>`) (JSON-LD
-   `AdministrativeArea`). 404 when the commune is not in the `communes` table; `noindex` until
-   `SEARCH_INDEX_COMMUNES` is on.
-3. `/{lang}/ueber-uns`, `/{lang}/datenschutz`, `/{lang}/api`, `/{lang}/lizenzen`; `/{lang}/suche`
-   (never indexed). Any other path under a language: the front end's error page, status 404.
-4. Every page carries Open Graph tags for link previews (title, description, address, locale).
-5. `/robots.txt`: every crawler, training crawlers included, may read the pages, but not `/api/`,
+   date, linked through `<PUBLIC_URL>/original/<sha256>?commune=<bfs_id>`), and a link to its
+   canton (JSON-LD `AdministrativeArea`). 404 when the commune is not in the `communes` table;
+   `noindex` until `SEARCH_INDEX_COMMUNES` is on.
+3. `/{lang}/kantone/{code}`, the code in lower case (`zh`): the canton's communes with documents,
+   each with its number of documents and linked to its page (JSON-LD `AdministrativeArea`). 404
+   for another code or one in capitals; `noindex` until `SEARCH_INDEX_COMMUNES` is on, and for a
+   canton without documents.
+4. `/{lang}/ueber-uns`, `/{lang}/datenschutz`, `/{lang}/api`, `/{lang}/lizenzen`; `/{lang}/suche`
+   (never indexed). Any other path under a language: the front end's error page, status 404. A
+   page path without a language, as old links name them (`/gemeinden/261`, `/ueber-uns`), is
+   answered with a 308 to the German page, query included.
+5. Every page carries Open Graph tags for link previews (title, description, address, locale, and
+   the card `/og/tractanda-<lang>.png`, 1200 x 630).
+6. `/robots.txt`: every crawler, training crawlers included, may read the pages, but not `/api/`,
    `/mcp`, `/original/` or the search. Lists the sitemap when `SEARCH_INDEXING` is on.
-6. `/sitemap.xml`: the start, about, privacy, API and licences pages and, with
-   `SEARCH_INDEX_COMMUNES`, every commune of the `communes` table, in the three languages.
-7. `/llms.txt`: a Markdown guide for AI agents (llmstxt.org) with the current totals, the MCP
+7. `/sitemap.xml`: the start, about, privacy, API and licences pages and, with
+   `SEARCH_INDEX_COMMUNES`, every commune and canton with documents, in the four languages.
+8. `/llms.txt`: a Markdown guide for AI agents (llmstxt.org) with the current totals, the MCP
    address and the API.
 
 ## Tables and indexes

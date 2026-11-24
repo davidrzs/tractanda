@@ -877,15 +877,41 @@ async fn former_names_of_the_site_lead_to_the_same_path_and_are_counted() {
         assert_eq!(status, StatusCode::PERMANENT_REDIRECT);
         assert_eq!(headers[header::LOCATION], "https://example.test/mcp?x=1");
     }
+    // an old link to a page without a language: to the German page in one step
+    let request = Request::get("/gemeinden/261?commune=1")
+        .header(header::HOST, "old.example.test")
+        .body(Body::empty())
+        .unwrap();
+    let (status, headers, _) = send(&f.router, request).await;
+    assert_eq!(status, StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(
+        headers[header::LOCATION],
+        "https://example.test/de/gemeinden/261?commune=1"
+    );
+    for (uri, to) in [
+        ("/gemeinden/261", "/de/gemeinden/261"),
+        ("/kantone/zh", "/de/kantone/zh"),
+        ("/suche?q=Budget", "/de/suche?q=Budget"),
+        ("/ueber-uns", "/de/ueber-uns"),
+        ("/api", "/de/api"),
+    ] {
+        let request = Request::get(uri)
+            .header(header::HOST, "example.test")
+            .body(Body::empty())
+            .unwrap();
+        let (status, headers, _) = send(&f.router, request).await;
+        assert_eq!(status, StatusCode::PERMANENT_REDIRECT, "{uri}");
+        assert_eq!(headers[header::LOCATION], to, "{uri}");
+    }
     let request = Request::get("/de/gemeinden/261")
         .header(header::HOST, "example.test")
         .body(Body::empty())
         .unwrap();
     let (status, _, _) = send(&f.router, request).await;
     assert_eq!(status, StatusCode::OK);
-    let rows = usage_rows(&f.usage_path, 3).await;
+    let rows = usage_rows(&f.usage_path, 4).await;
     assert!(
-        rows.contains(&("redirect".into(), "old.example.test".into(), 1, 308, 2, 0)),
+        rows.contains(&("redirect".into(), "old.example.test".into(), 1, 308, 3, 0)),
         "{rows:?}"
     );
 }
@@ -936,7 +962,7 @@ async fn usage_keeps_daily_counts_and_turns_past_visitors_into_a_number() {
 #[tokio::test]
 async fn the_front_end_is_served_with_a_fallback_and_api_errors_stay_json() {
     let f = fixture(false).await;
-    let request = Request::get("/gemeinden/261").body(Body::empty()).unwrap();
+    let request = Request::get("/irgendwo").body(Body::empty()).unwrap();
     let (status, headers, body) = send(&f.router, request).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
@@ -1282,12 +1308,20 @@ async fn commune_pages_carry_their_facts_for_crawlers() {
     assert!(html.contains(&format!("<meta property=\"og:title\" content=\"{title}\">")));
     assert!(html.contains("<meta property=\"og:locale\" content=\"fr_CH\">"));
     assert!(html.contains("<meta property=\"og:locale:alternate\" content=\"de_CH\">"));
+    assert!(html.contains(
+        "<meta property=\"og:image\" content=\"https://example.test/og/tractanda-fr.png\">"
+    ));
+    assert!(html.contains("<meta name=\"twitter:card\" content=\"summary_large_image\">"));
+    assert!(html.contains(
+        "\"containedInPlace\":{\"@type\":\"AdministrativeArea\",\"name\":\"Canton de Zurich\",\"url\":\"https://example.test/fr/kantone/zh\"}"
+    ));
     // commune pages are not indexed until SEARCH_INDEX_COMMUNES is set
     assert!(html.contains("<meta name=\"robots\" content=\"noindex\">"));
     // the fact sheet opens the body: counts, years and the newest documents
     let facts = html.split("<main id=\"oc-facts\">").nth(1).unwrap();
     assert!(html.contains("data-sveltekit-preload-data=\"hover\"><main id=\"oc-facts\">"));
     assert!(facts.starts_with("<h1>Zürich</h1><p>Zürich (ZH) : 4 documents"));
+    assert!(facts.contains("<p><a href=\"/fr/kantone/zh\">Canton de Zurich</a></p>"));
     assert!(facts.contains("<p>2024: 2 · 2023: 1 · sans année: 1</p>"));
     assert!(facts.contains(
         "<li>12.06.2024: <a href=\"https://example.test/original/aaaa?commune=261\" rel=\"nofollow\">Protokoll Gemeindeversammlung 2024</a></li>"
@@ -1309,6 +1343,47 @@ async fn commune_pages_carry_their_facts_for_crawlers() {
 }
 
 #[tokio::test]
+async fn canton_pages_list_their_communes_for_crawlers() {
+    let f = fixture(false).await;
+    let (status, _, html) = page(&f.router, "/fr/kantone/zh").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(html.contains(
+        "<title>Canton de Zurich : procès-verbaux, ordres du jour et budgets des communes — Tractanda</title>"
+    ));
+    assert!(html.contains(
+        "<meta name=\"description\" content=\"Canton de Zurich : procès-verbaux, ordres du jour, \
+         budgets et comptes de 1 communes, recherche en texte intégral et liens vers les originaux.\">"
+    ));
+    assert!(html.contains("<link rel=\"canonical\" href=\"https://example.test/fr/kantone/zh\">"));
+    assert!(html.contains("hreflang=\"it\" href=\"https://example.test/it/kantone/zh\""));
+    assert!(html.contains("\"identifier\":\"ZH\""));
+    // the communes with documents, linked; Aeugst am Albis is only in the register
+    let facts = html.split("<main id=\"oc-facts\">").nth(1).unwrap();
+    assert!(facts.starts_with(
+        "<h1>Canton de Zurich</h1><p>Canton de Zurich : 1 communes avec des documents"
+    ));
+    assert!(facts.contains(
+        "<h2>Communes</h2><ul><li><a href=\"/fr/gemeinden/261\">Zürich</a> (4)</li></ul>"
+    ));
+    // not indexed until SEARCH_INDEX_COMMUNES is set
+    assert!(html.contains("<meta name=\"robots\" content=\"noindex\">"));
+    for unknown in ["/de/kantone/xx", "/de/kantone/ZH", "/de/kantone/zhh"] {
+        let (status, _, html) = page(&f.router, unknown).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{unknown}");
+        assert!(html.contains("<meta name=\"robots\" content=\"noindex\">"));
+    }
+    let communes = build(false, true, true, false).await;
+    let (_, _, html) = page(&communes.router, "/en/kantone/vd").await;
+    assert!(!html.contains("<meta name=\"robots\""));
+    assert!(html.contains("<h1>Canton of Vaud</h1>"));
+    // a canton without documents has nothing to find
+    let (status, _, html) = page(&communes.router, "/de/kantone/ag").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(html.contains("<meta name=\"robots\" content=\"noindex\">"));
+    assert!(!html.contains("<h2>"));
+}
+
+#[tokio::test]
 async fn start_about_privacy_and_search_pages() {
     let f = fixture(false).await;
     let (_, _, html) = page(&f.router, "/it").await;
@@ -1317,6 +1392,12 @@ async fn start_about_privacy_and_search_pages() {
     assert!(html.contains("Sono classificati automaticamente"));
     assert!(html.contains("<a href=\"/it/gemeinden/261\">Zürich (ZH)</a>"));
     assert!(!html.contains("/it/gemeinden/4001")); // no documents
+    assert!(html.contains(
+        "<h2>Cantoni</h2><ul><li><a href=\"/it/kantone/vd\">Cantone di Vaud</a></li>\
+         <li><a href=\"/it/kantone/zh\">Cantone di Zurigo</a></li></ul>"
+    ));
+    assert!(html.contains("\"includedInDataCatalog\":{\"@type\":\"DataCatalog\""));
+    assert!(!html.contains("/api/documents")); // closed to crawlers: no download there
     let (status, _, html) = page(&f.router, "/de/ueber-uns").await;
     assert_eq!(status, StatusCode::OK);
     assert!(html.contains("<h1>Über Tractanda</h1>"));
@@ -1394,6 +1475,7 @@ async fn robots_sitemap_and_llms_txt() {
     );
     let (_, _, xml) = page(&f.router, "/sitemap.xml").await;
     assert!(!xml.contains("/gemeinden/")); // not until SEARCH_INDEX_COMMUNES is set
+    assert!(!xml.contains("/kantone/"));
     assert!(!xml.contains("entscheide"));
     assert!(xml.contains("<loc>https://example.test/fr</loc>"));
     assert!(xml.contains("<loc>https://example.test/it/datenschutz</loc>"));
@@ -1431,6 +1513,9 @@ async fn robots_sitemap_and_llms_txt() {
     }
     // a commune without documents stays out of the sitemap and is not indexed
     assert!(!xml.contains("/gemeinden/4001"));
+    assert!(xml.contains("<loc>https://example.test/fr/kantone/zh</loc>"));
+    assert!(xml.contains("<loc>https://example.test/en/kantone/vd</loc>"));
+    assert!(!xml.contains("/kantone/ag"));
     let (_, _, html) = page(&communes.router, "/de/gemeinden/4001").await;
     assert!(html.contains("<meta name=\"robots\" content=\"noindex\">"));
     assert!(!xml.contains("/gemeinden/4176")); // only in the register

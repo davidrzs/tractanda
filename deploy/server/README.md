@@ -46,8 +46,8 @@ To update, replace the binary, the site or the database and run `systemctl resta
 Logs: `journalctl -u opencommune`. Settings: `server/API.md`.
 
 Search engines: with `SEARCH_INDEXING=true` the pages may be indexed and `robots.txt` lists the
-sitemap; with `false` every response says `noindex`. The commune pages stay `noindex` and out of
-the sitemap until `SEARCH_INDEX_COMMUNES=true`. After a change: `systemctl daemon-reload` and a
+sitemap; with `false` every response says `noindex`. The commune and canton pages stay `noindex`
+and out of the sitemap until `SEARCH_INDEX_COMMUNES=true`. After a change: `systemctl daemon-reload` and a
 restart.
 
 MCP registry: `server.json` at the repository root describes the public MCP server for the official

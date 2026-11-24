@@ -91,6 +91,14 @@ pub struct Words {
     pub privacy: &'static str,
     pub privacy_text: &'static str,
     pub search: &'static str,
+    /// The start page's heading over the cantons and the canton page's over its communes.
+    pub cantons: &'static str,
+    pub communes: &'static str,
+    /// The canton page's line, title and description in search results; `{name}` is the canton's
+    /// name with its word for canton ("Kanton Zürich"), `{communes}` counts those with documents.
+    pub canton_line: &'static str,
+    pub canton_title: &'static str,
+    pub canton_description: &'static str,
     pub api: &'static str,
     pub api_text: &'static str,
     pub licences: &'static str,
@@ -123,6 +131,13 @@ const DE: Words = Words {
                    IP-Adressen und Suchbegriffe. Das Archiv nennt keine Privatpersonen: Dokumente \
                    tragen feste Bezeichnungen, Einbürgerungsunterlagen werden nicht aufgeführt.",
     search: "Suche",
+    cantons: "Kantone",
+    communes: "Gemeinden",
+    canton_line: "{name}: {communes} Gemeinden mit Dokumenten im offenen Archiv Tractanda.",
+    canton_title: "{name}: Protokolle, Traktanden und Budgets der Gemeinden",
+    canton_description: "{name}: Protokolle, Traktandenlisten, Budgets und Rechnungen aus \
+                         {communes} Gemeinden, im Volltext durchsuchbar, mit Links zu den \
+                         Originalen.",
     api: "API und MCP-Server",
     api_text: "Das Archiv ohne Schlüssel abfragen: eine JSON-API und ein MCP-Server für \
                KI-Assistenten, mit Volltextsuche in den Seiten der Dokumente.",
@@ -159,6 +174,14 @@ const FR: Words = Words {
                    les documents portent des intitulés fixes et les documents de naturalisation ne \
                    sont pas répertoriés.",
     search: "Recherche",
+    cantons: "Cantons",
+    communes: "Communes",
+    canton_line: "{name} : {communes} communes avec des documents dans l’archive ouverte \
+                  Tractanda.",
+    canton_title: "{name} : procès-verbaux, ordres du jour et budgets des communes",
+    canton_description: "{name} : procès-verbaux, ordres du jour, budgets et comptes de \
+                         {communes} communes, recherche en texte intégral et liens vers les \
+                         originaux.",
     api: "API et serveur MCP",
     api_text: "Interroger l’archive sans clé : une API JSON et un serveur MCP pour les \
                assistants d’IA, avec une recherche plein texte dans les pages des documents.",
@@ -195,6 +218,12 @@ const IT: Words = Words {
                    documenti portano denominazioni fisse e i documenti di naturalizzazione non \
                    sono elencati.",
     search: "Ricerca",
+    cantons: "Cantoni",
+    communes: "Comuni",
+    canton_line: "{name}: {communes} comuni con documenti nell’archivio aperto Tractanda.",
+    canton_title: "{name}: verbali, ordini del giorno e preventivi dei comuni",
+    canton_description: "{name}: verbali, ordini del giorno, preventivi e consuntivi di \
+                         {communes} comuni, ricerca a testo integrale e link agli originali.",
     api: "API e server MCP",
     api_text: "Interrogare l’archivio senza chiave: un’API JSON e un server MCP per gli \
                assistenti IA, con ricerca a testo integrale nelle pagine dei documenti.",
@@ -229,6 +258,13 @@ const EN: Words = Words {
                    without IP addresses or search terms. The archive names no private persons: \
                    documents carry fixed designations, and naturalisation records are not listed.",
     search: "Search",
+    cantons: "Cantons",
+    communes: "Municipalities",
+    canton_line: "{name}: {communes} municipalities with documents in the open archive \
+                  Tractanda.",
+    canton_title: "{name}: minutes, agendas and budgets of the municipalities",
+    canton_description: "{name}: minutes, agendas, budgets and accounts of {communes} \
+                         municipalities, full-text search and links to the originals.",
     api: "API and MCP server",
     api_text: "Query the archive without a key: a JSON API and an MCP server for AI assistants, \
                with full-text search in the pages of the documents.",
@@ -236,6 +272,52 @@ const EN: Words = Words {
     licences_text: "The licences of the code (MIT) and the data (CC0 1.0), and the open software, \
                     models and data Tractanda builds on.",
 };
+
+/// The cantons in the federal order: code and name in German, French, Italian and English, as the
+/// front end writes them (`frontend/src/lib/copy/commune.ts`).
+#[rustfmt::skip]
+const CANTONS: [(&str, [&str; 4]); 26] = [
+    ("ZH", ["Kanton Zürich", "Canton de Zurich", "Cantone di Zurigo", "Canton of Zurich"]),
+    ("BE", ["Kanton Bern", "Canton de Berne", "Cantone di Berna", "Canton of Bern"]),
+    ("LU", ["Kanton Luzern", "Canton de Lucerne", "Cantone di Lucerna", "Canton of Lucerne"]),
+    ("UR", ["Kanton Uri", "Canton d’Uri", "Cantone di Uri", "Canton of Uri"]),
+    ("SZ", ["Kanton Schwyz", "Canton de Schwytz", "Cantone di Svitto", "Canton of Schwyz"]),
+    ("OW", ["Kanton Obwalden", "Canton d’Obwald", "Cantone di Obvaldo", "Canton of Obwalden"]),
+    ("NW", ["Kanton Nidwalden", "Canton de Nidwald", "Cantone di Nidvaldo", "Canton of Nidwalden"]),
+    ("GL", ["Kanton Glarus", "Canton de Glaris", "Cantone di Glarona", "Canton of Glarus"]),
+    ("ZG", ["Kanton Zug", "Canton de Zoug", "Cantone di Zugo", "Canton of Zug"]),
+    ("FR", ["Kanton Freiburg", "Canton de Fribourg", "Cantone di Friburgo", "Canton of Fribourg"]),
+    ("SO", ["Kanton Solothurn", "Canton de Soleure", "Cantone di Soletta", "Canton of Solothurn"]),
+    ("BS", ["Kanton Basel-Stadt", "Canton de Bâle-Ville", "Cantone di Basilea Città", "Canton of Basel-Stadt"]),
+    ("BL", ["Kanton Basel-Landschaft", "Canton de Bâle-Campagne", "Cantone di Basilea Campagna", "Canton of Basel-Landschaft"]),
+    ("SH", ["Kanton Schaffhausen", "Canton de Schaffhouse", "Cantone di Sciaffusa", "Canton of Schaffhausen"]),
+    ("AR", ["Kanton Appenzell Ausserrhoden", "Canton d’Appenzell Rhodes-Extérieures", "Cantone di Appenzello Esterno", "Canton of Appenzell Ausserrhoden"]),
+    ("AI", ["Kanton Appenzell Innerrhoden", "Canton d’Appenzell Rhodes-Intérieures", "Cantone di Appenzello Interno", "Canton of Appenzell Innerrhoden"]),
+    ("SG", ["Kanton St. Gallen", "Canton de Saint-Gall", "Cantone di San Gallo", "Canton of St. Gallen"]),
+    ("GR", ["Kanton Graubünden", "Canton des Grisons", "Cantone dei Grigioni", "Canton of Graubünden"]),
+    ("AG", ["Kanton Aargau", "Canton d’Argovie", "Cantone di Argovia", "Canton of Aargau"]),
+    ("TG", ["Kanton Thurgau", "Canton de Thurgovie", "Cantone di Turgovia", "Canton of Thurgau"]),
+    ("TI", ["Kanton Tessin", "Canton du Tessin", "Cantone Ticino", "Canton of Ticino"]),
+    ("VD", ["Kanton Waadt", "Canton de Vaud", "Cantone di Vaud", "Canton of Vaud"]),
+    ("VS", ["Kanton Wallis", "Canton du Valais", "Cantone del Vallese", "Canton of Valais"]),
+    ("NE", ["Kanton Neuenburg", "Canton de Neuchâtel", "Cantone di Neuchâtel", "Canton of Neuchâtel"]),
+    ("GE", ["Kanton Genf", "Canton de Genève", "Cantone di Ginevra", "Canton of Geneva"]),
+    ("JU", ["Kanton Jura", "Canton du Jura", "Cantone del Giura", "Canton of Jura"]),
+];
+
+/// A canton's name in `lang` ("Kanton Zürich"); None for a code that names no canton.
+pub fn canton_name(code: &str, lang: Lang) -> Option<&'static str> {
+    let i = Lang::ALL.iter().position(|l| *l == lang)?;
+    CANTONS
+        .iter()
+        .find(|(c, _)| c.eq_ignore_ascii_case(code))
+        .map(|(_, names)| names[i])
+}
+
+/// The path of a canton's page after the language: `/kantone/zh`.
+pub fn canton_path(code: &str) -> String {
+    format!("/kantone/{}", code.to_ascii_lowercase())
+}
 
 /// One page as the server sends it: what goes into `<head>` and the fact sheet.
 pub struct Page {
@@ -322,13 +404,16 @@ impl Site {
              <meta property=\"og:title\" content=\"{}\">\n\
              <meta property=\"og:description\" content=\"{}\">\n\
              <meta property=\"og:url\" content=\"{}\">\n\
-             <meta property=\"og:image\" content=\"{}/icon-512.png\">\n\
+             <meta property=\"og:image\" content=\"{}/og/tractanda-{}.png\">\n\
+             <meta property=\"og:image:width\" content=\"1200\">\n\
+             <meta property=\"og:image:height\" content=\"630\">\n\
              <meta property=\"og:locale\" content=\"{}\">\n\
-             <meta name=\"twitter:card\" content=\"summary\">\n",
+             <meta name=\"twitter:card\" content=\"summary_large_image\">\n",
             escape(&page.title),
             escape(&page.description),
             escape(&url),
             escape(&self.public_url),
+            page.lang.code(),
             page.lang.locale(),
         ));
         for lang in Lang::ALL.into_iter().filter(|l| *l != page.lang) {
@@ -431,21 +516,42 @@ fn host_of(url: &str) -> String {
         .to_ascii_lowercase()
 }
 
-/// Middleware: a request to a former name of the site is sent on to the same path under
-/// `public_url` (308, so the method stays), and counted under the name it came to, so the usage
-/// statistics show how many still arrive through old links.
-pub async fn former_hosts(State(state): State<AppState>, request: Request, next: Next) -> Response {
+/// A page's path without a language, as old links name them (`/gemeinden/261`): the same page in
+/// German. None for any other path: the start page (`root` chooses its language), the API, files.
+pub fn in_german(path: &str) -> Option<String> {
+    let page = ["/ueber-uns", "/datenschutz", "/suche", "/api", "/lizenzen"].contains(&path)
+        || ["/gemeinden/", "/kantone/"]
+            .iter()
+            .any(|p| path.starts_with(p));
+    page.then(|| format!("/de{path}"))
+}
+
+/// Middleware: one permanent redirect (308, so the method stays) to the address a page has now. A
+/// request to a former name of the site goes to the same path under `public_url`, and a page path
+/// without a language to the German page, both at once when both apply. A request to a former
+/// name is counted under that name, so the usage statistics show how many still arrive through
+/// old links.
+pub async fn redirects(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let host = request
         .headers()
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
         .or_else(|| request.uri().host())
         .map(|h| h.split(':').next().unwrap_or(h).to_ascii_lowercase());
-    let Some(host) = host.filter(|h| state.site.former_hosts.iter().any(|f| f == h)) else {
+    let former = host.filter(|h| state.site.former_hosts.iter().any(|f| f == h));
+    let german = in_german(request.uri().path());
+    if former.is_none() && german.is_none() {
         return next.run(request).await;
+    }
+    let path = german.as_deref().unwrap_or(request.uri().path());
+    let query = request
+        .uri()
+        .query()
+        .map(|q| format!("?{q}"))
+        .unwrap_or_default();
+    let Some(host) = former else {
+        return Redirect::permanent(&format!("{path}{query}")).into_response();
     };
-    let path = request.uri().path_and_query().map_or("/", |p| p.as_str());
-    let target = format!("{}{path}", state.site.public_url);
     if let Some(usage) = &state.usage {
         let user_agent = request
             .headers()
@@ -463,7 +569,7 @@ pub async fn former_hosts(State(state): State<AppState>, request: Request, next:
             referrer: None,
         });
     }
-    Redirect::permanent(&target).into_response()
+    Redirect::permanent(&format!("{}{path}{query}", state.site.public_url)).into_response()
 }
 
 #[cfg(test)]
@@ -480,6 +586,30 @@ mod tests {
             escape("<a href=\"x\">&'"),
             "&lt;a href=&quot;x&quot;&gt;&amp;&#39;"
         );
+    }
+
+    #[test]
+    fn pages_without_a_language_and_canton_names() {
+        assert_eq!(
+            in_german("/gemeinden/261").as_deref(),
+            Some("/de/gemeinden/261")
+        );
+        assert_eq!(in_german("/kantone/zh").as_deref(), Some("/de/kantone/zh"));
+        assert_eq!(in_german("/ueber-uns").as_deref(), Some("/de/ueber-uns"));
+        assert_eq!(in_german("/api").as_deref(), Some("/de/api"));
+        for other in [
+            "/",
+            "/de/gemeinden/261",
+            "/api/documents",
+            "/gemeinden",
+            "/favicon.svg",
+        ] {
+            assert_eq!(in_german(other), None, "{other}");
+        }
+        assert_eq!(canton_name("ZH", Lang::Fr), Some("Canton de Zurich"));
+        assert_eq!(canton_name("ti", Lang::En), Some("Canton of Ticino"));
+        assert_eq!(canton_name("XX", Lang::De), None);
+        assert_eq!(canton_path("ZH"), "/kantone/zh");
     }
 
     #[test]

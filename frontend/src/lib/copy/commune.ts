@@ -16,6 +16,8 @@ type Status =
   | 'not_examined';
 type Texts = {
   path: string;
+  /** The page's title, the server's (server/src/site.rs, commune_title); {name} is the commune's. */
+  title: string;
   cantons: Record<string, string>;
   searchPlaceholder: string;
   checked: string;
@@ -55,6 +57,7 @@ type Texts = {
 export const commune: Record<Lang, Texts> = {
   de: {
     path: 'Pfad',
+    title: '{name}: Protokolle, Traktanden und Budgets der Gemeinde',
     cantons: {
       ZH: 'Kanton Zürich',
       BE: 'Kanton Bern',
@@ -141,6 +144,7 @@ export const commune: Record<Lang, Texts> = {
   },
   fr: {
     path: 'Fil d’Ariane',
+    title: '{name} : procès-verbaux, ordres du jour et budgets de la commune',
     cantons: {
       ZH: 'Canton de Zurich',
       BE: 'Canton de Berne',
@@ -228,6 +232,7 @@ export const commune: Record<Lang, Texts> = {
   },
   it: {
     path: 'Percorso',
+    title: '{name}: verbali, ordini del giorno e preventivi del comune',
     cantons: {
       ZH: 'Cantone di Zurigo',
       BE: 'Cantone di Berna',
@@ -314,6 +319,7 @@ export const commune: Record<Lang, Texts> = {
   },
   en: {
     path: 'Breadcrumb',
+    title: '{name}: minutes, agendas and budgets of the municipality',
     cantons: {
       ZH: 'Canton of Zurich',
       BE: 'Canton of Bern',

@@ -374,7 +374,7 @@ pub fn page_template(path: &str) -> Option<&'static str> {
         "/llms.txt" => return Some("/llms.txt"),
         _ => {}
     }
-    let rest = ["/de", "/fr", "/it"]
+    let rest = ["/de", "/fr", "/it", "/en"]
         .iter()
         .find_map(|l| {
             path.strip_prefix(l)
@@ -386,10 +386,19 @@ pub fn page_template(path: &str) -> Option<&'static str> {
         "/suche" => Some("/suche"),
         "/ueber-uns" => Some("/ueber-uns"),
         "/datenschutz" => Some("/datenschutz"),
-        _ => rest
-            .strip_prefix("/gemeinden/")
-            .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
-            .map(|_| "/gemeinden/{id}"),
+        "/api" => Some("/api"),
+        "/lizenzen" => Some("/lizenzen"),
+        _ => {
+            if let Some(id) = rest.strip_prefix("/gemeinden/") {
+                (!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+                    .then_some("/gemeinden/{id}")
+            } else if let Some(code) = rest.strip_prefix("/kantone/") {
+                (code.len() == 2 && code.bytes().all(|b| b.is_ascii_lowercase()))
+                    .then_some("/kantone/{code}")
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -565,6 +574,13 @@ mod tests {
         assert_eq!(page_template("/de/gemeinden/x"), None);
         assert_eq!(page_template("/fr/entscheide/dec-1a"), None);
         assert_eq!(page_template("/llms.txt"), Some("/llms.txt"));
+        assert_eq!(page_template("/en"), Some("/"));
+        assert_eq!(page_template("/en/gemeinden/261"), Some("/gemeinden/{id}"));
+        assert_eq!(page_template("/en/lizenzen"), Some("/lizenzen"));
+        assert_eq!(page_template("/fr/api"), Some("/api"));
+        assert_eq!(page_template("/it/kantone/ti"), Some("/kantone/{code}"));
+        assert_eq!(page_template("/de/kantone/ZH"), None);
+        assert_eq!(page_template("/enx"), None);
     }
 
     #[test]

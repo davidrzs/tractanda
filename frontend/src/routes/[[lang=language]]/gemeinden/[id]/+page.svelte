@@ -43,7 +43,7 @@
   });
 </script>
 
-<svelte:head><title>{c.name} · Tractanda</title></svelte:head>
+<svelte:head><title>{k.title.replace('{name}', c.name)} — Tractanda</title></svelte:head>
 <div class="mx-auto max-w-7xl px-4 sm:px-6">
   <nav class="mt-6 text-sm text-muted-foreground" aria-label={k.path}>
     <ol class="flex flex-wrap items-center gap-x-1.5">
@@ -53,7 +53,13 @@
           href={`${href('/', lang)}#gemeinden`}>{t.communes}</a
         >
       </li>
-      <li><span aria-hidden="true">/</span> {k.cantons[c.canton] ?? c.canton}</li>
+      <li>
+        <span aria-hidden="true">/</span>
+        {#if k.cantons[c.canton]}<a
+            class="rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            href={href(`/kantone/${c.canton.toLowerCase()}`, lang)}>{k.cantons[c.canton]}</a
+          >{:else}{c.canton}{/if}
+      </li>
       <li>
         <span aria-hidden="true">/</span>
         <span class="text-foreground" aria-current="page">{c.name}</span>

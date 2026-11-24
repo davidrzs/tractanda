@@ -39,7 +39,7 @@
     {
       to: href('/', lang),
       label: t.communes,
-      current: path === href('/', lang) || path.includes('/gemeinden/')
+      current: path === href('/', lang) || /\/(gemeinden|kantone)\//.test(path)
     },
     { to: href('/suche', lang), label: t.search, current: path.includes('/suche') },
     { to: href('/api', lang), label: 'API', current: /^\/(de|fr|it|en)\/api$/.test(path) }

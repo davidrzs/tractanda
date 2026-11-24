@@ -54,6 +54,12 @@ pub fn router() -> Router<AppState> {
                 }),
             )
             .route(
+                &format!("{base}/kantone/{{code}}"),
+                get(move |State(s): State<AppState>, Path(code): Path<String>| {
+                    pages::canton(s, lang, code)
+                }),
+            )
+            .route(
                 &format!("{base}/ueber-uns"),
                 get(move |State(s): State<AppState>| pages::about(s, lang)),
             )

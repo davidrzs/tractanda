@@ -32,7 +32,10 @@ To serve the built site: `npm run build`, then run the server with `STATIC_DIR=f
 ## What works
 
 - Map-first homepage with the number of files and communes, commune-name search and canton index
-  filter. Communes whose register status is `blocked_robots` are hatched.
+  filter, and links to the canton pages. Communes whose register status is `blocked_robots` are
+  hatched.
+- Canton pages (`/{lang}/kantone/{code}`, the code in lower case): the canton's communes on a map
+  and in a list by name, each with its number of documents.
 - Addressable commune archives (`/{lang}/gemeinden/{bfs}`): a holdings table (documents per year
   and section family; a cell filters the list), then the commune's files. Each file shows its
   printed title, body, pages, languages that differ from the page's, and its sections: a contents

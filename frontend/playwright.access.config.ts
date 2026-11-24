@@ -7,7 +7,9 @@ export default defineConfig({
     'documents.spec.ts',
     'api.spec.ts',
     'search.spec.ts',
-    'facts.spec.ts'
+    'facts.spec.ts',
+    // the answer above the search results, its server mocked in the test
+    'ask.spec.ts'
   ],
   workers: 1,
   use: { baseURL: 'http://127.0.0.1:5174', viewport: { width: 1440, height: 1000 } },

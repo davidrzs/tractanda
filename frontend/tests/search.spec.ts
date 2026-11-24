@@ -10,7 +10,7 @@ test('full-text search: matching pages, marks, filters, cap and paging', async (
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('request', (request) => requests.push(new URL(request.url()).pathname));
   await page.goto('/de/suche');
-  const box = page.getByLabel('Im Text der Dokumente suchen …');
+  const box = page.getByLabel('Stichwort oder Frage …');
   await expect(page.locator('.search-help')).toContainText('Alle Wörter müssen auf der Seite');
   await expect(page.locator('.search-help')).toContainText('maschinell ausgelesen');
   await expect(box).toHaveAttribute('aria-describedby', 'search-help');
@@ -151,7 +151,7 @@ test('commune page search, title list of a commune, languages and phone', async 
   await expect(rows.locator('.hits-count')).toHaveText('1 passende Seite');
 
   // without words: the commune's files by title, the commune as a removable filter
-  await page.getByLabel('Im Text der Dokumente suchen …').fill('');
+  await page.getByLabel('Stichwort oder Frage …').fill('');
   await page.getByRole('button', { name: 'Suchen', exact: true }).click();
   await expect(page).toHaveURL(/\/de\/suche\?commune=117$/);
   await expect(page.locator('.active-commune')).toContainText('Gemeinde: Hinwil');
@@ -165,9 +165,7 @@ test('commune page search, title list of a commune, languages and phone', async 
 
   // French and Italian
   await page.goto('/fr/suche?q=Investitionskredit');
-  await expect(page.getByLabel('Rechercher dans le texte des documents …')).toHaveValue(
-    'Investitionskredit'
-  );
+  await expect(page.getByLabel('Mot-clé ou question …')).toHaveValue('Investitionskredit');
   await expect(rows.first().locator('.hits-count')).toHaveText('2 pages correspondantes');
   await expect(rows.first().locator('.hit-meta')).toHaveText([
     'p. 3 ↗ · Préavis',

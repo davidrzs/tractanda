@@ -216,6 +216,7 @@ async fn build(with_usage: bool, indexing: bool, index_communes: bool, fulltext:
             &static_dir,
         )
         .with_former_hosts(&["old.example.test".to_string()]),
+        ask: None,
     };
     let router = app(state, &static_dir, &["localhost".to_string()]);
     Fixture {
@@ -1447,7 +1448,8 @@ async fn openapi_describes_every_route_and_the_fields_the_api_sends() {
         .skip(1)
         .filter_map(|rest| rest.split('"').next())
         .filter(|p| (p.starts_with("/api/") && *p != "/api/{*rest}") || p.starts_with("/original/"))
-        .filter(|p| *p != "/api/usage") // the operator's report, not part of the public API
+        // the operator's reports and the chatbot of the site's own page: not the public API
+        .filter(|p| !p.starts_with("/api/usage") && !p.starts_with("/api/ask"))
         .collect();
     routes.sort();
     let mut described = keys(&spec["paths"]);

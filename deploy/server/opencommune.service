@@ -12,7 +12,13 @@ Environment=MCP_ALLOWED_HOSTS=www.tractanda.ch,tractanda.ch,opencommune.ch,www.o
 Environment=PUBLIC_URL=https://www.tractanda.ch
 # The bare name and the former names: sent on to PUBLIC_URL and counted.
 Environment=FORMER_HOSTS=tractanda.ch,opencommune.ch,www.opencommune.ch
-# USAGE_TOKEN for the operator's report GET /api/usage, readable by root only (see README.md).
+# The chatbot's questions (kept 90 days) and daily counts; it is on while ASK_API_KEY is set in
+# secrets.env, and off while the file ASK_OFF_FILE exists.
+Environment=ASK_PATH=/var/lib/opencommune/ask.sqlite3
+# (in the state folder: the service runs as a dynamic user and cannot see into /etc/opencommune)
+Environment=ASK_OFF_FILE=/var/lib/opencommune/ask-off
+# USAGE_TOKEN for the operator's report GET /api/usage and ASK_API_KEY for the chatbot, readable
+# by root only (see README.md).
 EnvironmentFile=-/etc/opencommune/secrets.env
 # Search engines may index the pages, the commune pages included.
 Environment=SEARCH_INDEXING=true
@@ -24,6 +30,8 @@ ProtectHome=yes
 PrivateTmp=yes
 NoNewPrivileges=yes
 Restart=on-failure
+# many open connections, slow ones included, do not run out of file handles
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target

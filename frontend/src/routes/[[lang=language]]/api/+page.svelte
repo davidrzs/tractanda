@@ -123,7 +123,7 @@
       </p>
     </header>
 
-    <section class={cn('mcp', sectionClass)}>
+    <section id="mcp" class={cn('mcp', sectionClass)}>
       <h2 class={h2Class}>{t.mcpTitle}</h2>
       <p class={pClass}>
         {t.mcp.split('{url}')[0]}<code class={codeClass}>{mcpUrl}</code>{t.mcp.split('{url}')[1]}

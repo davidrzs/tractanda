@@ -30,6 +30,18 @@ printf 'USAGE_TOKEN=%s\n' "$(openssl rand -hex 32)" > /etc/opencommune/secrets.e
 chmod 600 /etc/opencommune/secrets.env
 ```
 
+The answer above the search results (the chatbot) is on once its model key is in the same file:
+add a line `ASK_API_KEY=...` (a key of its own, on prepaid credits without automatic reload) and
+restart. `touch /var/lib/opencommune/ask-off` turns it off without a restart; removing the file
+turns it on again. (The service cannot see into `/etc/opencommune`, so the file lives in its state
+folder; a path it cannot check counts as off.) Its other settings (provider, model, daily dollars): `server/API.md`.
+
+When the key's credit or spend limit runs out, the provider refuses; the question ends with "answers
+are not available right now; the search keeps working", and answers pause for 15 minutes, then
+the next question tries again. Answers kept from the last 7 days are still given. The log says so
+(`journalctl -u opencommune | grep no_credit`, an error line) and the usage report counts
+`no_credit`. Top up or raise the limit: answers come back within 15 minutes, without a restart.
+
 To update, replace the binary, the site or the database and run `systemctl restart opencommune`.
 Logs: `journalctl -u opencommune`. Settings: `server/API.md`.
 

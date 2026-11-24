@@ -14,7 +14,14 @@ export const FILTERS = [
   'canton',
   'commune'
 ] as const;
-export type Filters = Record<(typeof FILTERS)[number], string> & { offset: number };
+// `terms`: the words the list searches when they are not the visitor's own: the full-text search the
+// answer above the results made (search page), set when the visitor's words found nothing.
+// `exact`: the visitor asked for their own words; the list then keeps them.
+export type Filters = Record<(typeof FILTERS)[number], string> & {
+  offset: number;
+  terms: string;
+  exact: boolean;
+};
 
 export function readFilters(url: URL): Filters {
   const get = (key: string) => url.searchParams.get(key)?.trim() || '';
@@ -30,7 +37,9 @@ export function readFilters(url: URL): Filters {
     year: /^\d{4}$/.test(year) ? year : '',
     canton: /^[A-Z]{2}$/.test(canton) ? canton : '',
     commune: /^\d+$/.test(commune) ? commune : '',
-    offset: Math.max(0, Math.floor(Number(url.searchParams.get('offset')) || 0))
+    offset: Math.max(0, Math.floor(Number(url.searchParams.get('offset')) || 0)),
+    terms: get('terms'),
+    exact: get('exact') === '1'
   };
 }
 
@@ -41,6 +50,7 @@ export function documentQuery(filters: Filters, commune?: string) {
   if (commune || filters.commune) query.set('commune', commune || filters.commune);
   for (const key of ['section', 'family', 'first_family', 'body', 'year', 'q'] as const)
     if (filters[key]) query.set(key, filters[key]);
+  if (filters.terms) query.set('q', filters.terms);
   query.set('offset', String(filters.offset));
   query.set('limit', String(PAGE_SIZE));
   return query;
@@ -52,6 +62,7 @@ export function textQuery(filters: Filters) {
   const query = new URLSearchParams();
   for (const key of FILTERS)
     if (filters[key] && key !== 'first_family') query.set(key, filters[key]);
+  if (filters.terms) query.set('q', filters.terms);
   query.set('offset', String(filters.offset));
   query.set('limit', String(PAGE_SIZE));
   return query;

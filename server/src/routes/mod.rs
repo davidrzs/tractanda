@@ -1,6 +1,7 @@
 //! HTTP routes, one handler per endpoint, grouped by area. Handlers parse and validate
 //! parameters, call one query function in `db` and return JSON.
 
+mod ask;
 mod communes;
 mod documents;
 mod fulltext;
@@ -9,7 +10,7 @@ mod pages;
 
 use axum::Router;
 use axum::extract::{Path, State};
-use axum::routing::get;
+use axum::routing::{get, post};
 
 use crate::AppState;
 use crate::error::ApiError;
@@ -28,6 +29,10 @@ pub fn router() -> Router<AppState> {
         .route("/api/openapi.json", get(openapi::spec))
         // the operator's usage report: needs a token, not part of the public API
         .route("/api/usage", get(crate::usage::report))
+        .route("/api/usage/questions", get(crate::usage::questions))
+        // the chatbot
+        .route("/api/ask", post(ask::ask))
+        .route("/api/ask/challenge", get(ask::challenge))
         .route("/api/{*rest}", get(not_found))
         .route("/original/{sha256}", get(documents::original))
         .route("/robots.txt", get(pages::robots))

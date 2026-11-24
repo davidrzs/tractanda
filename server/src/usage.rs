@@ -397,7 +397,9 @@ pub fn page_template(path: &str) -> Option<&'static str> {
 fn classify(matched: Option<&str>, path: &str) -> Option<(&'static str, String)> {
     match matched {
         // MCP tools are counted one by one by the MCP handler; the operator's report is not counted
-        Some("/mcp") | Some("/api/{*rest}") | Some("/api/usage") => None,
+        Some("/mcp") | Some("/api/{*rest}") | Some("/api/usage") | Some("/api/usage/questions") => {
+            None
+        }
         Some(route) if route.starts_with("/api/") => Some(("api", route.to_string())),
         Some(route @ "/original/{sha256}") => Some(("original", route.to_string())),
         // pages, whether the server renders their facts or only serves the front end
@@ -407,7 +409,7 @@ fn classify(matched: Option<&str>, path: &str) -> Option<(&'static str, String)>
 
 /// The client's address: the peer, or behind a reverse proxy on this machine the address it
 /// forwards. Forwarded headers from anyone else are ignored.
-fn client_address(peer: Option<SocketAddr>, headers: &HeaderMap) -> Option<String> {
+pub fn client_address(peer: Option<SocketAddr>, headers: &HeaderMap) -> Option<String> {
     let peer = peer?;
     if peer.ip().is_loopback()
         && let Some(forwarded) = headers
@@ -502,8 +504,47 @@ pub async fn report(
             .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
         return response;
     }
-    match usage.report(params.days.unwrap_or(30).clamp(1, 3660)).await {
-        Ok(report) => ([(header::CACHE_CONTROL, "no-store")], Json(report)).into_response(),
+    let days = params.days.unwrap_or(30).clamp(1, 3660);
+    let mut report = match usage.report(days).await {
+        Ok(report) => report,
+        Err(error) => return ApiError::from(error).into_response(),
+    };
+    // the chatbot's questions and dollars per day and outcome
+    if let Some(ask) = &state.ask {
+        match ask.store.report(days).await {
+            Ok(counts) => report["ask"] = counts,
+            Err(error) => return ApiError::from(error).into_response(),
+        }
+    }
+    ([(header::CACHE_CONTROL, "no-store")], Json(report)).into_response()
+}
+
+/// `GET /api/usage/questions?days=<n>`: the chatbot's questions and answers of the last 7 days, or
+/// of `days` (1 to 90), newest first; for the operator, with the token of the usage report.
+pub async fn questions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<ReportParams>,
+) -> Response {
+    let (Some(usage), Some(ask)) = (
+        state.usage.as_ref().filter(|u| u.token.is_some()),
+        state.ask.as_ref(),
+    ) else {
+        return ApiError::not_found("Not Found").into_response();
+    };
+    if !usage.authorised(&headers) {
+        let mut response = ApiError::unauthorized().into_response();
+        response
+            .headers_mut()
+            .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+        return response;
+    }
+    match ask
+        .store
+        .questions(params.days.unwrap_or(7).clamp(1, 90))
+        .await
+    {
+        Ok(rows) => ([(header::CACHE_CONTROL, "no-store")], Json(rows)).into_response(),
         Err(error) => ApiError::from(error).into_response(),
     }
 }

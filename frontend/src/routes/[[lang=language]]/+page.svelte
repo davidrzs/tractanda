@@ -1,6 +1,7 @@
 <script lang="ts">
   import { copy, href, fmt, type Lang } from '$lib/i18n';
   import { DATASET_URL, MCP_COMMAND, SOURCE_URL, docs, start } from '$lib/copy/start';
+  import { askCopy } from '$lib/copy/ask';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Map from '$lib/Map.svelte';
@@ -35,9 +36,15 @@
   let q = $state('');
   const searchHref = (words: string) =>
     href('/suche', lang) + (words ? `?${new URLSearchParams({ q: words })}` : '');
+  // a search made here: the answer above the results starts by itself (search page)
   function search(e: SubmitEvent) {
     e.preventDefault();
-    goto(searchHref(q.trim()));
+    goto(searchHref(q.trim()), { state: { ask: true } });
+  }
+  function searchExample(e: MouseEvent, words: string) {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    goto(searchHref(words), { state: { ask: true } });
   }
 
   // the list of communes, most documents first
@@ -123,9 +130,23 @@
                 ? ` ${s.or} `
                 : ', '}<a
               href={searchHref(example)}
+              onclick={(e) => searchExample(e, example)}
               class="rounded-sm font-medium text-zinc-800 underline decoration-zinc-300 underline-offset-4 outline-none hover:decoration-zinc-900 focus-visible:ring-2 focus-visible:ring-ring"
               >{example}</a
-            >{/each}
+            >{/each}{` ${s.orAsk} `}<a
+            href={searchHref(s.askExample)}
+            onclick={(e) => searchExample(e, s.askExample)}
+            class="rounded-sm font-medium text-zinc-800 underline decoration-zinc-300 underline-offset-4 outline-none hover:decoration-zinc-900 focus-visible:ring-2 focus-visible:ring-ring"
+            >{s.askExample}</a
+          >
+        </p>
+        <p class="ask-notice mt-2 text-xs leading-5 text-muted-foreground">
+          {askCopy[lang].notice}
+          <a
+            href={href('/datenschutz', lang)}
+            class="rounded-sm text-zinc-700 underline decoration-zinc-300 underline-offset-4 hover:decoration-zinc-900"
+            >{askCopy[lang].privacy}</a
+          >
         </p>
       </form>
       <p class="mt-10 text-sm leading-6 text-muted-foreground">{s.machineNote}</p>

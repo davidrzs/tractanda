@@ -6,12 +6,14 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use rig_core::tool::DynamicTool;
+use rig_rmcp::McpConnection;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::schemars::JsonSchema;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
-use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
+use rmcp::{ErrorData, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -162,13 +164,33 @@ pub struct DocumentArgs {
 #[derive(Clone)]
 pub struct Archive {
     state: AppState,
+    /// The usage channel its tool calls are counted under: `mcp`, or `ask` for the chatbot.
+    channel: &'static str,
 }
 
 impl Archive {
+    /// A result as its channel needs it: `/mcp` the structured content with its text, the chatbot
+    /// the text alone, so that its model does not read the same rows twice.
+    fn structured(&self, value: Value) -> CallToolResult {
+        if self.channel == "ask" {
+            CallToolResult::success(vec![ContentBlock::text(value.to_string())])
+        } else {
+            CallToolResult::structured(value)
+        }
+    }
+
+    fn with_text(&self, text: String, value: Value) -> CallToolResult {
+        if self.channel == "ask" {
+            CallToolResult::success(vec![ContentBlock::text(text)])
+        } else {
+            with_text(text, value)
+        }
+    }
+
     fn count(&self, tool: &str, started: Instant, status: u16, search_total: Option<i64>) {
         if let Some(usage) = &self.state.usage {
             usage.record(Hit {
-                channel: "mcp",
+                channel: self.channel,
                 route: tool.to_string(),
                 bot: None,
                 status,
@@ -254,9 +276,8 @@ impl Archive {
             .map_err(internal)?;
         let total = search.is_search().then_some(page.total);
         self.count("search_documents", started, 200, total);
-        Ok(CallToolResult::structured(
-            serde_json::to_value(BriefDocumentPage::from(page)).unwrap_or(Value::Null),
-        ))
+        Ok(self
+            .structured(serde_json::to_value(BriefDocumentPage::from(page)).unwrap_or(Value::Null)))
     }
 
     #[tool(
@@ -286,9 +307,7 @@ impl Archive {
             ));
         };
         self.count("get_document", started, 200, None);
-        Ok(CallToolResult::structured(
-            serde_json::to_value(document).unwrap_or(Value::Null),
-        ))
+        Ok(self.structured(serde_json::to_value(document).unwrap_or(Value::Null)))
     }
 
     #[tool(
@@ -323,9 +342,7 @@ impl Archive {
             .map_err(internal)?;
         let total = (search.offset == 0).then_some(page.total);
         self.count("search_text", started, 200, total);
-        Ok(CallToolResult::structured(
-            serde_json::to_value(BriefTextPage::from(page)).unwrap_or(Value::Null),
-        ))
+        Ok(self.structured(serde_json::to_value(BriefTextPage::from(page)).unwrap_or(Value::Null)))
     }
 
     #[tool(
@@ -373,9 +390,7 @@ impl Archive {
             return Ok(refused("read_pages", "no document has this sha256"));
         };
         self.count("read_pages", started, 200, None);
-        Ok(CallToolResult::structured(
-            serde_json::to_value(pages).unwrap_or(Value::Null),
-        ))
+        Ok(self.structured(serde_json::to_value(pages).unwrap_or(Value::Null)))
     }
 
     #[tool(
@@ -413,7 +428,7 @@ impl Archive {
                 "{note}\n{}",
                 table("cantons", &["canton", "communes", "documents"], &rows)
             );
-            with_text(text, json!({"note": note, "cantons": cantons}))
+            self.with_text(text, json!({"note": note, "cantons": cantons}))
         } else {
             let list = communes::brief(&self.state.db, canton, q)
                 .await
@@ -445,7 +460,7 @@ impl Archive {
                     "No commune matches. canton takes a code such as ZH, q part of a name.\n{text}"
                 );
             }
-            with_text(text, json!({"communes": list}))
+            self.with_text(text, json!({"communes": list}))
         };
         self.count("list_communes", started, 200, None);
         Ok(result)
@@ -478,9 +493,7 @@ impl Archive {
             ));
         };
         self.count("get_commune", started, 200, None);
-        Ok(CallToolResult::structured(
-            serde_json::to_value(commune).unwrap_or(Value::Null),
-        ))
+        Ok(self.structured(serde_json::to_value(commune).unwrap_or(Value::Null)))
     }
 }
 
@@ -508,6 +521,39 @@ pub fn service(
 
 impl Archive {
     fn new(state: AppState) -> Self {
-        Archive { state }
+        Archive {
+            state,
+            channel: "mcp",
+        }
     }
+}
+
+/// The tools of `/mcp` for the chatbot (`ask`): the same server, connected in-process over an
+/// in-memory pipe, its calls counted under the channel `ask`. The tools keep the connection open.
+pub async fn chat_tools(state: AppState) -> Result<Vec<DynamicTool>, String> {
+    let (server_io, client_io) = tokio::io::duplex(256 * 1024);
+    let archive = Archive {
+        state,
+        channel: "ask",
+    };
+    tokio::spawn(async move {
+        match archive.serve(server_io).await {
+            Ok(running) => {
+                let _ = running.waiting().await;
+            }
+            Err(error) => tracing::error!(%error, "ask: the in-process MCP server did not start"),
+        }
+    });
+    let client = rig_rmcp::client_config("tractanda-ask", env!("CARGO_PKG_VERSION"))
+        .serve(client_io)
+        .await
+        .map_err(|e| format!("in-process MCP client: {e}"))?;
+    let connection = McpConnection::new(client);
+    connection
+        .tools()
+        .await
+        .map_err(|e| format!("in-process MCP tools: {e}"))?
+        .into_iter()
+        .map(|tool| DynamicTool::try_from(tool).map_err(|e| format!("MCP tool: {e}")))
+        .collect()
 }

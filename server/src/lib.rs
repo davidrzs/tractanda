@@ -2,6 +2,7 @@
 //! pages crawlers read, all from the serving database the Python package builds, and full-text
 //! search from its index of page text when there is one. See `API.md` and `CONVENTIONS.md`.
 
+pub mod ask;
 pub mod config;
 pub mod db;
 pub mod error;
@@ -21,6 +22,7 @@ use sqlx::SqlitePool;
 use tower_http::compression::CompressionLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
+use tower_http::timeout::RequestBodyTimeoutLayer;
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
@@ -37,6 +39,8 @@ pub struct AppState {
     pub usage: Option<Usage>,
     /// The public address, the indexing switch and the front end's HTML for the crawled pages.
     pub site: Site,
+    /// The chatbot, when a model is configured (`ASK_API_KEY`).
+    pub ask: Option<std::sync::Arc<ask::Ask>>,
 }
 
 /// The whole site: API routes, `/mcp`, and the front end with `index.html` for every other path
@@ -73,7 +77,20 @@ pub fn app(state: AppState, static_dir: &Path, mcp_allowed_hosts: &[String]) -> 
             site::former_hosts,
         ))
         .layer(trace)
-        .layer(CompressionLayer::new());
+        .layer(CompressionLayer::new())
+        // no other site may show these pages in a frame (and make its visitors ask the chatbot)
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("frame-ancestors 'self'"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("SAMEORIGIN"),
+        ))
+        // a request body that trickles in does not hold a connection for long
+        .layer(RequestBodyTimeoutLayer::new(
+            std::time::Duration::from_secs(10),
+        ));
     // until SEARCH_INDEXING is set, the site asks search engines not to index anything
     let router = if indexing {
         router

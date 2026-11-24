@@ -117,7 +117,7 @@ export const copy = {
     originalLanguage: 'Dokumente bleiben in ihrer Originalsprache.',
     reset: 'Filter zurücksetzen',
     unknownDate: 'Nicht datierte PDFs erscheinen ohne Jahresfilter.',
-    textSearch: 'Im Text der Dokumente suchen …',
+    textSearch: 'Stichwort oder Frage …',
     textHelp:
       'Alle Wörter müssen auf der Seite vorkommen. "Wörter in Anführungszeichen" suchen genau diese Folge. Wort* findet alle Wörter, die so beginnen, auch Zusammensetzungen: Kunstrasen* findet Kunstrasenplatz. OR findet das eine oder das andere: Kunstrasen* OR "gazon synthétique". Klammern gruppieren; NEAR(Kunstrasen Kredit) findet Wörter nahe beieinander.',
     textScope:
@@ -242,7 +242,7 @@ export const copy = {
     originalLanguage: 'Les documents restent dans leur langue originale.',
     reset: 'Réinitialiser les filtres',
     unknownDate: 'Les PDF non datés apparaissent sans filtre par année.',
-    textSearch: 'Rechercher dans le texte des documents …',
+    textSearch: 'Mot-clé ou question …',
     textHelp:
       'Tous les mots doivent figurer sur la page. "Des mots entre guillemets" cherchent exactement cette suite. mot* trouve tous les mots qui commencent ainsi. OR trouve l’un ou l’autre : "gazon synthétique" OR Kunstrasen*. Les parenthèses regroupent ; NEAR(gazon crédit) trouve des mots proches l’un de l’autre.',
     textScope:
@@ -366,7 +366,7 @@ export const copy = {
     originalLanguage: 'I documenti rimangono nella loro lingua originale.',
     reset: 'Azzera i filtri',
     unknownDate: 'I PDF senza data appaiono senza filtro per anno.',
-    textSearch: 'Cerca nel testo dei documenti …',
+    textSearch: 'Parola chiave o domanda …',
     textHelp:
       'Tutte le parole devono comparire nella pagina. "Parole tra virgolette" cercano esattamente questa sequenza. parola* trova tutte le parole che iniziano così. OR trova l’una o l’altra: "campo sintetico" OR Kunstrasen*. Le parentesi raggruppano; NEAR(campo credito) trova parole vicine.',
     textScope:
@@ -489,7 +489,7 @@ export const copy = {
     originalLanguage: 'Documents stay in their original language.',
     reset: 'Reset filters',
     unknownDate: 'Undated PDFs appear only without a year filter.',
-    textSearch: 'Search the text of the documents …',
+    textSearch: 'Keyword or question …',
     textHelp:
       'All words must appear on the page. "Words in quotes" search for exactly this sequence. word* finds all words that begin this way, compounds too: Kunstrasen* finds Kunstrasenplatz. OR finds either: Kunstrasen* OR "gazon synthétique". Parentheses group; NEAR(Kunstrasen Kredit) finds words close together.',
     textScope:

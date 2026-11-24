@@ -19,7 +19,7 @@
   // API query the page loaded the list with, from `endpoint`. Results of /api/pages (a full-text
   // search) show each file's matching pages and offer the canton and commune filters.
   // `placeholder`, `button` and `help`: the text field's placeholder, its button and a help line
-  // under it. `communes`: every commune, to name the commune filter. Across every commune (the
+  // under it; `above`: what stands between the field and the list (the answer on the search page). `communes`: every commune, to name the commune filter. Across every commune (the
   // search page) the filters stand in a column left of the list; on a commune page above it.
   let {
     results,
@@ -32,6 +32,7 @@
     placeholder,
     button,
     help,
+    above,
     communes = []
   }: {
     results: DocumentPage | TextPage;
@@ -44,6 +45,7 @@
     placeholder?: string;
     button?: string;
     help?: Snippet;
+    above?: Snippet;
     communes?: Commune[];
   } = $props();
   let t = $derived(copy[lang]);
@@ -143,9 +145,26 @@
       const value = String(data.get(key) ?? '').trim();
       if (value) query.set(key, value);
     }
+    // the answer's search stays with the same words, and goes with new ones
+    if (query.get('q') === filters.q && filters.terms) query.set('terms', filters.terms);
+    if (query.get('q') === filters.q && filters.exact) query.set('exact', '1');
     const search = String(query);
-    goto(`${page.url.pathname}${search ? `?${search}` : ''}`, { keepFocus: true, noScroll: true });
+    // words typed here: the answer above the results may start by itself (search page); a filter
+    // alone keeps whatever the page had, so a shared link does not ask through a filter
+    goto(`${page.url.pathname}${search ? `?${search}` : ''}`, {
+      keepFocus: true,
+      noScroll: true,
+      state: query.get('q') !== filters.q ? { ask: true } : page.state
+    });
   }
+  // the list for the visitor's own words, which the answer's search then leaves alone
+  let exactLink = $derived.by(() => {
+    const query = new URLSearchParams(page.url.searchParams);
+    query.delete('terms');
+    query.delete('offset');
+    query.set('exact', '1');
+    return `?${query}`;
+  });
   // this page with one parameter changed or removed
   function link(key: string, value: string) {
     const query = new URLSearchParams(page.url.searchParams);
@@ -220,6 +239,7 @@
         >
           {@render help()}
         </div>{/if}
+      {#if above}{@render above()}{/if}
     </div>
 
     <div class={wide ? 'mt-4 lg:col-[1/4] lg:row-[3] lg:mt-0 lg:self-start lg:pt-6' : 'mt-2'}>
@@ -278,8 +298,15 @@
           ]}
         >
           <span>{fmt(results.total, lang)} {results.total === 1 ? t.resultOne : t.result}</span
-          >{#if filters.q}{` ${more.about.replace('{q}', filters.q)}`}{/if}
+          >{#if filters.q}{` ${more.about.replace('{q}', filters.terms || filters.q)}`}{/if}
         </p>
+        {#if filters.terms}<p class="answer-terms mt-1 text-sm text-muted-foreground">
+            {more.answerTerms} ·
+            <a
+              class="rounded-sm font-medium text-foreground underline decoration-zinc-300 underline-offset-4 hover:decoration-zinc-900"
+              href={exactLink}>{more.exactWords}</a
+            >
+          </p>{/if}
         <p class="mt-1 text-sm text-muted-foreground">
           {#if filters.q}{`${text ? more.inText : more.inTitles} · `}{/if}{text
             ? more.bestFirst

@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::process::ExitCode;
 
+use opencommune_server::ask::Ask;
 use opencommune_server::config::Config;
 use opencommune_server::site::Site;
 use opencommune_server::usage::Usage;
@@ -59,12 +60,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         &config.static_dir,
     )
     .with_former_hosts(&config.former_hosts);
-    let state = AppState {
+    let mut state = AppState {
         db,
         fulltext: fulltext.is_some(),
         usage,
         site,
+        ask: None,
     };
+    if let Some(ask) = config.ask.clone() {
+        let model = ask.settings.model.clone();
+        match Ask::start(state.clone(), ask).await {
+            Ok(ask) => {
+                tracing::info!(%model, "the chatbot is on");
+                state.ask = Some(ask);
+            }
+            Err(error) => tracing::warn!(%error, "the chatbot is off: it did not start"),
+        }
+    }
     let router = app(state, &config.static_dir, &config.mcp_allowed_hosts);
     let listener = TcpListener::bind(config.bind).await?;
     tracing::info!(

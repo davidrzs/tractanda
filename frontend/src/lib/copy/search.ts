@@ -14,6 +14,8 @@ export const searchCopy: Record<
     pageOf: string;
     tips: string;
     firstFamily: string;
+    answerTerms: string;
+    exactWords: string;
   }
 > = {
   de: {
@@ -26,7 +28,9 @@ export const searchCopy: Record<
     pages: 'Seiten der Ergebnisse',
     pageOf: 'Seite {n} von {total}',
     tips: 'Suchtipps',
-    firstFamily: 'Erster Teil:'
+    firstFamily: 'Erster Teil:',
+    answerTerms: 'Die Suche, die die Antwort gemacht hat',
+    exactWords: 'Nach Ihren genauen Wörtern suchen'
   },
   fr: {
     about: 'pour « {q} »',
@@ -38,7 +42,9 @@ export const searchCopy: Record<
     pages: 'Pages de résultats',
     pageOf: 'Page {n} sur {total}',
     tips: 'Conseils de recherche',
-    firstFamily: 'Première partie :'
+    firstFamily: 'Première partie :',
+    answerTerms: 'La recherche faite par la réponse',
+    exactWords: 'Chercher vos mots exacts'
   },
   it: {
     about: 'per «{q}»',
@@ -50,7 +56,9 @@ export const searchCopy: Record<
     pages: 'Pagine dei risultati',
     pageOf: 'Pagina {n} di {total}',
     tips: 'Consigli di ricerca',
-    firstFamily: 'Prima parte:'
+    firstFamily: 'Prima parte:',
+    answerTerms: 'La ricerca fatta dalla risposta',
+    exactWords: 'Cercare le vostre parole esatte'
   },
   en: {
     about: 'for “{q}”',
@@ -62,6 +70,8 @@ export const searchCopy: Record<
     pages: 'Result pages',
     pageOf: 'Page {n} of {total}',
     tips: 'Search tips',
-    firstFamily: 'First part:'
+    firstFamily: 'First part:',
+    answerTerms: 'The search the answer made',
+    exactWords: 'Search your exact words'
   }
 };

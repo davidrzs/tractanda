@@ -1,3 +1,13 @@
+# Requests that trickle in are cut off: headers within 10 seconds, bodies within 30.
+{
+	servers {
+		timeouts {
+			read_header 10s
+			read_body 30s
+		}
+	}
+}
+
 # The bare name and the former names reach the server too, which sends them on to
 # www.tractanda.ch and counts how many still arrive that way (FORMER_HOSTS).
 www.tractanda.ch, tractanda.ch, opencommune.ch, www.opencommune.ch {

@@ -29,6 +29,17 @@ DATABASE_PATH=data/opencommune.db STATIC_DIR=frontend/build server/target/releas
 | `SEARCH_INDEXING` | `false` | `true`: search engines may index the pages; `false`: every response says `noindex` |
 | `SEARCH_INDEX_COMMUNES` | `false` | `true`: the commune pages may be indexed too and join the sitemap; `false`: they say `noindex` |
 | `RUST_LOG` | `info,rmcp=warn` | log filter; `debug` logs one line per request (route template only) |
+| `ASK_API_KEY` | none | the chatbot's model key; without it `/api/ask` answers 503 (`off`) |
+| `ASK_PROVIDER` | `anthropic` | `anthropic` (Messages API) or `openai` (any OpenAI-compatible endpoint, such as the CSCS inference platform) |
+| `ASK_MODEL` | `claude-haiku-5-5` for `anthropic` | the model; required for `openai` |
+| `ASK_BASE_URL` | the provider's own | the API root, for an OpenAI-compatible endpoint elsewhere |
+| `ASK_EFFORT` | `low` | reasoning: `off`, `low`, `medium` or `high` |
+| `ASK_PRICE_INPUT`, `ASK_PRICE_OUTPUT` | `0.10`, `0.50` | dollars per million input and output tokens, for the daily cap |
+| `ASK_PRICE_INPUT_LONG`, `ASK_PRICE_OUTPUT_LONG` | `0.50`, `2.50` | the same for a call above 100,000 input tokens |
+| `ASK_DAILY_USD` | `1` | dollars a day (UTC) the chatbot may spend; then it refuses questions until midnight UTC |
+| `ASK_MODEL_CALLS_PER_MINUTE` | none | model calls a minute at most, for a provider with a request limit (the CSCS platform allows 15) |
+| `ASK_OFF_FILE` | none | while this file exists the chatbot is off, without a restart; a path the server cannot check counts as off |
+| `ASK_PATH` | `data/logs/ask.sqlite3` | the chatbot's questions (kept 90 days) and daily counts (writable, separate file) |
 
 `DATASET_PATH` is no longer read.
 
@@ -295,6 +306,47 @@ nothing else, as rows by day:
    link elsewhere, from browsers only.
 4. `bots`: `day, name, requests`: requests from recognised automated clients, by crawler name
    (`other` when unknown, `none` without a user agent).
+5. `ask`, when the chatbot is configured: `day, outcome, questions, usd`: questions per outcome
+   (`answered`, `too_broad`, `used_up`, `budget`, `busy`, `timeout`, `cancelled`, `empty`,
+   `no_credit`, `failed`, `cached` for those answered again from what was kept, and `refused:<reason>` for those
+   turned away before the model, as `POST /api/ask` names the reasons) and the dollars they cost.
+   Cached and refused questions are counted in memory and written once a minute. The chatbot's tool calls are counted in
+   `totals` under the channel `ask`.
+
+### `GET /api/usage/questions?days=<n>` (operator only)
+
+The chatbot's questions of the last `days` days (default 7, at most 90), newest first, with the
+token of the usage report: `asked_at, lang, question, answer, steps[{tool, args}], outcome,
+prompt_version, model, model_calls, input_tokens, output_tokens, usd, duration_ms`. Nothing that
+identifies the asker is kept. Rows older than 90 days are deleted.
+
+### `GET /api/ask/challenge` and `POST /api/ask` (the site's chatbot)
+
+Not part of the public API: the site's search page uses them for the answer above the results, and
+they are made hard to use from anywhere else (`docs/CHATBOT.md`, `src/ask/`). No page of the site
+may be shown in a frame on another site (`frame-ancestors 'self'`).
+
+1. `GET /api/ask/challenge` gives `{challenge, bits}`. The page finds a decimal `solution` such
+   that the SHA-256 of `<challenge>:<solution>` starts with `bits` zero bits (16: about 65,000
+   tries). A challenge is valid for five minutes, from the address it was given to, once.
+   Recognised crawlers get 403.
+2. `POST /api/ask` with `Origin` of the site and a JSON body `{question, lang, challenge,
+   solution}` (`lang`: de, fr, it or en; the question 3 to 500 characters; the body within five
+   seconds) answers with server-sent events: `step` `{tool, args}` for each tool call (with the
+   arguments as they ran: the chatbot's searches ask for at most 30 documents of 2 pages, its
+   readings for at most 5 pages), `answer` `{text}` (Markdown links, bold and lists) when there is
+   one, and `end` `{outcome}`.
+3. The start page's example searches (`EXAMPLES` in `src/ask/mod.rs`) are answered once and then,
+   for 7 days and the same prompt version, given again from what was kept: after the proof of work,
+   without the model and against no limit. Nothing a visitor typed otherwise is kept as an answer,
+   so no one can find out whether someone asked a given question.
+4. Refusals are JSON `{detail, reason}`: 403 `origin`, `client` (a recognised crawler) or
+   `challenge`; 400 `body`, `short` or `long`; 408 `slow`; 413 `body`; 429 `used_up` (the daily
+   dollars), `visitor` (15 a day per address and browser), `address` (30 a day), `address_hour`
+   (6 an hour per address), `hour` (60 an hour for the site) or `no_credit` (answers pause for 15
+   minutes after the model's provider refused for want of credit or a spend limit; kept answers are
+   still given); 503 `busy` (two questions are being answered) or `off`. Only a question that runs counts against the limits. An IPv6 address
+   counts as its /64.
 
 ### `GET /original/{sha256}?commune=<bfs_id>`
 

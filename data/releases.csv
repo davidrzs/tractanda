@@ -1,0 +1,3 @@
+version,date,documents,pages,communes,searchable_pages,ocr_pages,classification_run,git_commit,note
+2026.11.17,2026-11-17,349986,4184672,2050,2211902,0,classify-65e415a748e2,,"Recorded afterwards: the serving database built on 2026-11-16 and the full-text index built from it on 2026-11-17, live since then. The commit was not recorded."
+2026.11.26,2026-11-26,349986,4184672,2050,2590276,378374,classify-65e415a748e2,e2a746a8a2e6f0fd909761fa883df57aaeea5f34-dirty,"First OCR: 378,374 pages without a usable text layer read with PaddleOCR-VL-1.6 (queue 2026-11-26), privacy-checked with gheim and indexed; new redaction form rule for names listed with a year of birth. Serving database rebuilt with the releases and downloads tables."

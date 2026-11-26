@@ -85,6 +85,9 @@ INSERT INTO access_observations VALUES
    strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now', '-1 day')),
   (4176, 'http://www.schwaderloch.ch/', 'technical_error',
    strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now', '-2 days'), 'http://www.schwaderloch.ch/robots.txt', NULL);
+INSERT INTO releases VALUES
+  ('2026.11.17', '2026-11-17', 4, 240, 2, 6, 0, 'classify-aaaa', NULL, 'baseline');
+INSERT INTO downloads VALUES ('2026-09-06', 2), ('2026-09-08', 3);
 "#;
 
 /// The build fills the title index once the documents are written.
@@ -117,6 +120,9 @@ INSERT INTO build VALUES ('section_types', '{"minutes": {"pages": 1, "indexed": 
   "budget": {"pages": 1, "indexed": 1}, "accounts": {"pages": 0, "indexed": 0},
   "proposal": {"pages": 0, "indexed": 0}, "invitation_agenda": {"pages": 1, "indexed": 1},
   "member_request": {"pages": 0, "indexed": 0}}');
+INSERT INTO build VALUES ('release', '{"version": "2026.11.26", "date": "2026-11-26",
+  "documents": 5, "pages": 249, "communes": 2, "searchable_pages": 7, "ocr_pages": 1,
+  "classification_run": "classify-aaaa", "git_commit": "abc", "note": null}');
 "#;
 
 fn temp_path(name: &str) -> PathBuf {
@@ -600,6 +606,35 @@ async fn runs_carry_their_settings_as_json() {
             "documents": 5
         }])
     );
+}
+
+#[tokio::test]
+async fn releases_end_with_the_version_the_index_was_released_as() {
+    let baseline = json!({
+        "version": "2026.11.17", "date": "2026-11-17", "documents": 4, "pages": 240,
+        "communes": 2, "searchable_pages": 6, "ocr_pages": 0, "classification_run": "classify-aaaa",
+        "git_commit": null, "note": "baseline"
+    });
+    let downloads = json!([{"day": "2026-09-06", "files": 2}, {"day": "2026-09-08", "files": 3}]);
+    // without an index nothing is known to be released: the ledger as the build found it
+    let f = fixture(false).await;
+    let (status, body) = get(&f.router, "/api/releases").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body,
+        json!({"current": null, "releases": [baseline], "downloads": downloads})
+    );
+
+    let f = fulltext_fixture().await;
+    let (_, body) = get(&f.router, "/api/releases").await;
+    assert_eq!(body["current"], "2026.11.26");
+    assert_eq!(body["releases"][0], baseline);
+    assert_eq!(body["releases"][1]["ocr_pages"], 1);
+    assert_eq!(body["releases"].as_array().unwrap().len(), 2);
+    // the start page names the version to search engines
+    let (_, _, html) = page(&f.router, "/de").await;
+    assert!(html.contains("\"version\":\"2026.11.26\""));
+    assert!(html.contains("\"dateModified\":\"2026-11-26\""));
 }
 
 #[tokio::test]

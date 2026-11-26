@@ -14,8 +14,8 @@ use crate::AppState;
 use crate::db::documents::Search;
 use crate::db::fulltext::{PageRange, TextSearch};
 use crate::models::{
-    Commune, CommuneDetail, DocumentDetail, DocumentPage, DocumentPages, RegisterEntry, Run,
-    TextPage,
+    Commune, CommuneDetail, DocumentDetail, DocumentPage, DocumentPages, RegisterEntry, Releases,
+    Run, TextPage,
 };
 
 /// `GET /api/openapi.json`.
@@ -98,6 +98,12 @@ pub fn build(public_url: &str) -> Value {
             "The classification runs, with every setting that changes what they saw and a note on \
              what those settings do to the data.",
             vec![], ok::<Vec<Run>>(&mut out, "The runs."), &[],
+        )},
+        "/api/releases": {"get": operation(
+            "listReleases", "Documents",
+            "The released versions of the data with their counts, the version the site serves, and \
+             the files first downloaded each day, also those not classified yet.",
+            vec![], ok::<Releases>(&mut out, "The versions."), &[],
         )},
         "/api/openapi.json": {"get": operation(
             "getOpenApi", "API",

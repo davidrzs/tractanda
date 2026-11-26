@@ -106,14 +106,19 @@ def iweb_command(
         None, help="BFS ids; defaults to all i-web register entries"
     ),
     page_budget: int = typer.Option(
-        100, min=1, help="Pages per commune this pass; unfinished queues are retained"
+        100,
+        min=1,
+        help="Pages per commune this pass, four times as many with a parliament; unfinished queues "
+        "are retained",
     ),
     limit: int | None = typer.Option(
         None, min=1, help="Download attempts per commune; known PDFs do not count"
     ),
     retry_failed: bool = typer.Option(False, help="Retry previously failed pages or documents"),
     refresh: bool = typer.Option(
-        False, help="Revisit listing pages to find new publications; keep held PDFs"
+        False,
+        help="Revisit listing pages to find new publications; keep held PDFs and an unfinished "
+        "queue",
     ),
     only_unconfigured: bool = typer.Option(False, help="Discover communes not yet configured"),
     max_minutes: int | None = typer.Option(
@@ -233,7 +238,9 @@ def wordpress_command(
 
 @app.command("linked-archive")
 def linked_archive_command(
-    mode: str = typer.Argument(..., help="fetch or check"),
+    mode: str = typer.Argument(
+        ..., help="fetch, check, or accept a reviewed configuration change (needs --commune)"
+    ),
     commune: str | None = typer.Option(None, help="Optional comma-separated BFS ids"),
     limit: int = typer.Option(3, min=1, help="New PDF attempts per commune"),
     max_minutes: int = typer.Option(60, min=1),
@@ -245,11 +252,15 @@ def linked_archive_command(
     retry_failed: bool = typer.Option(False),
 ):
     """Fetch or check the linked archives (data/linked-sources.yaml)."""
+    import json
+
     from ..communes import bfs_register
     from ..crawl import linked_archive
 
-    if mode not in {"fetch", "check"}:
-        raise typer.BadParameter("mode must be fetch or check")
+    if mode not in {"fetch", "check", "accept"}:
+        raise typer.BadParameter("mode must be fetch, check or accept")
+    if mode == "accept" and not commune:
+        raise typer.BadParameter("accept needs --commune: the sources whose change was reviewed")
     try:
         sources = linked_archive.load_sources()
         if commune:
@@ -264,6 +275,11 @@ def linked_archive_command(
             typer.echo(
                 f"{len(sources)} linked archive sources valid, checked {where} the BFS snapshot"
             )
+            return
+        if mode == "accept":
+            for source in sources:
+                result = linked_archive.accept(source)
+                typer.echo(json.dumps(result or {"bfs_id": source.bfs_id, "unchanged": True}))
             return
         linked_archive.run_fetch(
             sources,

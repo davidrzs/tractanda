@@ -2,7 +2,7 @@
 //! API (`API.md`).
 
 use rmcp::schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
 
@@ -522,6 +522,56 @@ impl From<RunRow> for Run {
             documents: r.documents,
         }
     }
+}
+
+// --- releases ----------------------------------------------------------------------------------
+
+/// A released version of the data: a serving database and the full-text index built from it
+/// (`release.py`). Its row of the ledger `data/releases.csv`.
+#[derive(FromRow, Serialize, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+pub struct Release {
+    /// The day of the release, `2026.11.26`; `2026.11.26.2` for a second one that day.
+    pub version: String,
+    /// ISO date of the release.
+    pub date: String,
+    /// Documents listed.
+    pub documents: i64,
+    /// Their pages.
+    pub pages: i64,
+    /// Communes with at least one listed document.
+    pub communes: i64,
+    /// Pages in the full-text index.
+    pub searchable_pages: i64,
+    /// Of those, pages whose text came from OCR.
+    pub ocr_pages: i64,
+    /// The classification run the documents' fields come from (`GET /api/runs`).
+    pub classification_run: String,
+    /// The commit of the code that built the version; `-dirty` when tracked files differed from it.
+    pub git_commit: Option<String>,
+    /// A note for the maintainers, in English.
+    pub note: Option<String>,
+}
+
+/// Files first downloaded on one day, also those not classified yet.
+#[derive(FromRow, Serialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+pub struct Downloads {
+    /// ISO date, UTC.
+    pub day: String,
+    pub files: i64,
+}
+
+/// `GET /api/releases`.
+#[derive(Serialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+pub struct Releases {
+    /// The version the site serves; null when the files it serves were not released.
+    pub current: Option<String>,
+    /// Every released version, oldest first.
+    pub releases: Vec<Release>,
+    /// Files first downloaded each day, oldest first.
+    pub downloads: Vec<Downloads>,
 }
 
 // --- register ----------------------------------------------------------------------------------

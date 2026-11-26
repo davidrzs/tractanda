@@ -406,15 +406,19 @@ def _send(
 def _send_following(
     client, polite, request: httpx.Request, stream: bool, check_hops: bool
 ) -> httpx.Response:
-    """Send and follow redirects hop by hop; raises FetchFailure (robots) before a disallowed hop."""
+    """Send and follow redirects hop by hop; raises FetchFailure (robots) before a disallowed hop.
+    The closed redirect responses are kept in the answer's `history`, as httpx does."""
     url = str(request.url)
+    hops: list[httpx.Response] = []
     r = client.send(request, stream=stream, follow_redirects=False)
     for _ in range(MAX_REDIRECTS):
         if not r.is_redirect or r.next_request is None:
+            r.history = hops
             return r
         following = r.next_request
         target = str(following.url)
         r.close()
+        hops.append(r)
         _check_host_cooldown(target)
         if check_hops and not polite.allowed(target):
             raise FetchFailure("robots", url, f"redirect to {target} is disallowed by robots.txt")

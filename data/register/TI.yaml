@@ -37,6 +37,15 @@
       with fric_11761_cat0 = 569 and 570 and the form''s hidden inputs (form step). Dry run: 104 documents 2017-2026,
       every date matching its session title (two-day sessions dated to the second day); minutes (Verbale) are published
       from 2021 on, resolutions from 2017. Robots Crawl-delay 30'
+  - body: parliament
+    kind: documents
+    status: configured
+    listing_url: https://www.bellinzona.ch/Conti-comunali?MasterId=g1_34982
+    from: '2017'
+    to: '2026'
+    how: 'html_links, 1 hop: every link in the list (div.ListCont) of Conti comunali, the municipal messages on the
+      budgets (preventivi 2018-2027) and accounts (consuntivi 2018-2025) with their annexes; the newest are linked
+      without .pdf (MM-<no>-...), older ones through downdoc.php; dry run: 47 documents, undated'
 - bfs_id: 5003
   name: Cadenazzo
   canton: TI

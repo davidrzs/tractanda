@@ -56,3 +56,29 @@ def test_pages_lists_every_page_in_scope_with_its_text(tmp_path):
     ]
     assert pages[1].text == "Der Gemeinderat beschliesst den Steuerfuss.\nGemeinde-\nRat"
     assert pages[1].raw.startswith("Der Gemeinde-\nrat") and pages[4].text == ""
+
+
+def test_an_ocr_answer_is_read_as_plain_text():
+    answer = (
+        '<div style="text-align: center;"><img src="imgs/img_in_header_image_box_88_51_264_143.jpg"'
+        ' alt="Image" width="14%" />\n\nGEMEINDE BEISPIEL\n\n</div>\n\n\n## Rechnung 2023\n\n'
+        "Laut Gesetz vom 1<sup>er</sup> Juli, **genehmigt**.<br/>Kontakt: <info@example.ch>\n\n"
+        "<table border=1 style='margin: auto; word-wrap: break-word;'><tr>"
+        '<td rowspan="2" colspan="2">Konto</td><td>Betrag $ ^{*} $</td></tr>'
+        "<tr><td style='text-align: center;'>Unterhalt &amp; Reparatur</td>"
+        "<td>19&#x27;983.60</td></tr></table>\n\n\n\nSchluss"
+    )
+    plain = scope.ocr_plain_text(answer)
+    assert plain == (
+        "GEMEINDE BEISPIEL\n\nRechnung 2023\n\nLaut Gesetz vom 1er Juli, genehmigt.\n"
+        "Kontakt: <info@example.ch>\n\nKonto | Betrag *\nUnterhalt & Reparatur | 19'983.60\n\n"
+        "Schluss"
+    )
+    page = scope.Page("a" * 64, 1, ("accounts",), "ocr", "ocr:q", answer)
+    assert page.text == plain and page.usable
+    layer = scope.Page("a" * 64, 1, ("accounts",), "layer", "layer:p", "<b>wie es ist</b>")
+    assert layer.text == "<b>wie es ist</b>"
+    tags_only = scope.Page(
+        "a" * 64, 1, ("accounts",), "ocr", "ocr:q", "<table><tr><td></td></tr></table>" * 5
+    )
+    assert not tags_only.usable

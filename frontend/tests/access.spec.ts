@@ -61,6 +61,17 @@ test('about page keeps language, explains limits and offers email contact', asyn
   await expect(page.locator('#run-classify-65e415a748e2 .run-meta')).toHaveText(
     'Modell: model-x · 25 Dokumente'
   );
+  // the versions: the current one's counts, the chart, and each version's changes, newest first
+  const versions = page.locator('#versionen');
+  await expect(versions).toContainText('Aktuelle Version: 2026.11.26');
+  await expect(versions.locator('.current div').filter({ hasText: 'Texterkennung' })).toContainText(
+    /1.234/ // the browser's de-CH separator
+  );
+  await expect(versions.locator('svg[role="img"]')).toBeVisible();
+  await expect(versions.locator('.releases li')).toHaveText([
+    /\+5 Dokumente · \+50 Seiten · \+1.234 im Volltext durchsuchbare Seiten · \+1.234 Seiten aus Texterkennung/,
+    /Erste erfasste Version/
+  ]);
   const contact = page.locator('.about-page [data-report-email]');
   await expect(contact).toHaveAttribute('href', '#report');
   await page.evaluate(() =>

@@ -1,6 +1,6 @@
 """The databases: the main one (`init-db`), the internal catalogue of files in it (`catalog`), the
-serving database the web server reads (`build`) and the full-text index of page text
-(`build-fulltext`)."""
+serving database the web server reads (`build`), the full-text index of page text
+(`build-fulltext`) and the release of those two as a version of the data (`release`)."""
 
 from __future__ import annotations
 
@@ -51,6 +51,24 @@ def build_fulltext() -> None:
         settings.fulltext_db, settings.serving_db, settings.text_db, settings.privacy_db
     )
     typer.echo(json.dumps(counts))
+
+
+@app.command()
+def release(
+    note: str = typer.Option(..., help="What changed, for the ledger; the site does not show it"),
+) -> None:
+    """Release DATA_DIR/serving.db and DATA_DIR/fulltext.db as the next version of the data.
+
+    Run it after build and build-fulltext, before the deploy: it appends the version's row to
+    releases.csv in the configuration (commit that file) and writes the row into the full-text
+    index, from which the site shows it."""
+    from .. import release as stage
+
+    try:
+        row = stage.run(settings.releases_file, settings.serving_db, settings.fulltext_db, note)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    typer.echo(f"released {row.version}: add {settings.releases_file} to the next commit")
 
 
 @app.command("catalog")

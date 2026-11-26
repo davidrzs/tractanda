@@ -1534,21 +1534,29 @@
 - bfs_id: 2581
   name: Olten
   canton: SO
-  status: not_published
+  status: configured
   website: https://www.olten.ch
   vendor: i-web
   reachable: true
-  checked: 2026-10-19
-  checked_by: crawler dry run (unverified)
-  notes: Gemeindeparlament; i-web site, now reachable. /sitzung lists the Parlamentssitzungen, but a session page
-    links only business pages ('Antrag Stadtrat', 'Beschluss Parlament', 'Beantwortung Stadtrat') whose decisions
-    are HTML text without PDFs; /protokolle is 404. No PDF source.
+  checked: 2026-11-21
+  checked_by: listing review
+  notes: Gemeindeparlament. /sitzung lists about 247 Parlamentssitzungen from 2002-06-27 (13 of them upcoming). Each
+    session page has a Geschäfte table whose business page 'Protokoll <date>' (earlier 'Parlamentsprotokoll vom ...',
+    'Protokoll Parlament ...') links the Gesamtprotokoll PDF under /_doc/; since 2025 an 'Abstimmungsresultate'
+    business page links the vote statistics PDF. Its Traktanden table links 'Beschluss Parlament' business pages
+    whose decision (title, date, vote) is HTML only, in div.row.read. /politbusiness lists the business pages only
+    from 2023; /protokolle is 404. The weekly pass follows the newest 30 sessions (2025-05 on); a backfill reaches
+    2002.
   publications:
   - body: parliament
     kind: minutes
-    status: not_published
+    status: configured
     listing_url: https://www.olten.ch/sitzung
-    how: i-web session table /sitzung; session pages link business pages with HTML decisions, no PDFs
+    from: '2002-06-27'
+    to: '2026-09-24'
+    cadence: 10 per year
+    how: 'html_links, 3 hops: session pages, the Protokoll and Abstimmungsresultate business pages, their /_doc/ PDFs;
+      second source, 2 hops: the ''Beschluss Parlament'' pages captured as HTML (capture: html, div.row.read)'
 - bfs_id: 2582
   name: Rickenbach
   canton: SO

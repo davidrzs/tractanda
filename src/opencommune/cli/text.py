@@ -119,17 +119,20 @@ def queue(
 @app.command("ocr")
 def ocr(
     name: str = typer.Argument(..., help="The queue"),
-    url: str = typer.Option(
-        ..., help="The vLLM server's OpenAI API, e.g. http://127.0.0.1:8100/v1"
-    ),
+    url: str = typer.Option(..., help="The PaddleX service, e.g. http://127.0.0.1:8080"),
     worker: str | None = typer.Option(None, help="This worker's name, e.g. the Slurm job id"),
-    concurrency: int = typer.Option(256, min=1, help="Pages in flight; changes speed, not output"),
+    concurrency: int = typer.Option(
+        2, min=1, help="Requests in flight; the service reads one at a time, so two keep it busy"
+    ),
+    pages_per_request: int = typer.Option(
+        64, min=1, help="Pages per request; changes speed, not output"
+    ),
     render_workers: int = typer.Option(6, min=1, help="Renderer processes"),
     until: float | None = typer.Option(None, help="Unix time at which to stop"),
 ) -> None:
     """Work on a queue until no chunk is left for this worker, `until`, or SIGTERM.
 
-    Reads the PDFs from DATA_DIR's raw directory. Exits with 2 when the server stopped answering
+    Reads the PDFs from DATA_DIR's raw directory. Exits with 2 when the service stopped answering
     or the worker failed."""
     import logging
     import socket
@@ -144,7 +147,14 @@ def ocr(
     label = worker or f"{socket.gethostname()}-{os.getpid()}"
     with reported_errors():
         result = text_ocr.run(
-            Queue(root), settings.raw_dir, url, label, concurrency, render_workers, until
+            Queue(root),
+            settings.raw_dir,
+            url,
+            label,
+            concurrency,
+            pages_per_request,
+            render_workers,
+            until,
         )
     typer.echo(json.dumps(result))
     sys.stdout.flush()

@@ -216,12 +216,7 @@ pub async fn home(state: AppState, lang: Lang) -> Result<Response, ApiError> {
         lang.code(),
         escape(w.about)
     ));
-    let page = Page {
-        lang,
-        path: String::new(),
-        title: format!("Tractanda — {}", first_clause(w.site)),
-        description: w.site.to_string(),
-        json_ld: Some(json!({
+    let mut dataset = json!({
             "@context": "https://schema.org",
             "@type": "Dataset",
             "name": "Tractanda",
@@ -239,7 +234,23 @@ pub async fn home(state: AppState, lang: Lang) -> Result<Response, ApiError> {
                 "name": "Hugging Face",
                 "url": "https://huggingface.co/datasets",
             },
-        })),
+    });
+    // the released version the site serves (`/api/releases`)
+    let versions = crate::db::documents::releases(&state.db, state.fulltext).await?;
+    if let Some(current) = versions
+        .releases
+        .iter()
+        .find(|r| Some(&r.version) == versions.current.as_ref())
+    {
+        dataset["version"] = json!(current.version);
+        dataset["dateModified"] = json!(current.date);
+    }
+    let page = Page {
+        lang,
+        path: String::new(),
+        title: format!("Tractanda — {}", first_clause(w.site)),
+        description: w.site.to_string(),
+        json_ld: Some(dataset),
         facts,
         noindex: false,
     };

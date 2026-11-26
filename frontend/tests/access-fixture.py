@@ -420,6 +420,36 @@ RUNS = [
 ]
 
 
+def release(version, date, documents, searchable, ocr):
+    return dict(
+        version=version,
+        date=date,
+        documents=documents,
+        pages=documents * 10,
+        communes=5,
+        searchable_pages=searchable,
+        ocr_pages=ocr,
+        classification_run=RUN,
+        git_commit=None,
+        note=None,
+    )
+
+
+# a baseline and a version that added OCR pages; files downloaded on three days
+RELEASES = dict(
+    current="2026.11.26",
+    releases=[
+        release("2026.11.17", "2026-11-17", 20, 150, 0),
+        release("2026.11.26", "2026-11-26", 25, 1384, 1234),
+    ],
+    downloads=[
+        dict(day="2026-09-06", files=12),
+        dict(day="2026-10-01", files=8),
+        dict(day="2026-11-20", files=9),
+    ],
+)
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlsplit(self.path)
@@ -436,6 +466,8 @@ class Handler(BaseHTTPRequestHandler):
             status, body = pages(parse_qs(url.query))
         elif path == "/api/runs":
             body = RUNS
+        elif path == "/api/releases":
+            body = RELEASES
         elif path == "/api/openapi.json":
             # the server's own description, saved from a running server
             body = json.loads((Path(__file__).parent / "openapi.json").read_text())

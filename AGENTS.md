@@ -12,8 +12,9 @@
    anonymisation) are being moved in.
 2. `server/`: the Rust web server (JSON API, MCP, static front end). It reads the database only.
 3. `frontend/`: the SvelteKit site, built to static files.
-4. `data/`: the checked-in configuration (`communes.yaml`, source lists, `register/`). Crawl state
-   and documents live in `DATA_DIR`, outside git.
+4. `data/`: the checked-in configuration (`communes.yaml`, source lists, `register/`) and the
+   ledger of released versions (`releases.csv`). Crawl state and documents live in `DATA_DIR`,
+   outside git.
 5. `docs/`: how-tos for adding communes, the register, the crawler and storage.
 
 ## Crawling
@@ -42,6 +43,15 @@
    stored. Answers stay private in `DATA_DIR`.
 3. One prompt version is always rendered with the same PyMuPDF version (pinned in `uv.lock`), so its
    requests stay the same bytes; a test pins them.
+
+## Versions of the data
+
+1. A version is a serving database and the full-text index built from it, released together with
+   `opencommune release` and deployed together. Data reaches the site only as a version.
+2. `data/releases.csv` is the ledger: one row per version, written by `release`, committed with the
+   deploy. Rows are only added; none is edited or removed.
+3. A copy of the data published elsewhere (Hugging Face, Zenodo) is made from a released version and
+   carries its name.
 
 ## Engineering
 

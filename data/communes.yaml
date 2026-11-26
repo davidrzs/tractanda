@@ -15461,6 +15461,26 @@
       text_regex: Protokoll|Beschl|Einladung|Botschaft|Beleuchtender|Weisung|Traktanden|Ratschlag|Erl[aä]uterung|Ergebnisse|Jahresrechnung|Rechnung|Budget|Voranschlag|Vorlagen|Gesch[aä]ftsbericht|Jahresbericht|Rechenschaftsbericht|Mitteilungsblatt
         zur Gemeindeversammlung
 
+- bfs_id: 3251
+  name: Altstätten
+  canton: SG
+  language: de
+  added: 2026-11-21
+  website: https://www.altstaetten.ch
+  vendor: i-web
+  body: assembly
+  lat: 47.3776
+  lon: 9.5477
+  listing_urls:
+  - https://www.altstaetten.ch/newsarchiv
+  adapter: html_links
+  adapter_config:
+    steps:
+    - selector: a[href*='/_rte/information/']
+      text_regex: ^Bürgerversammlung\b.*\bvom \d|^Bürgerversammlung genehmigt|^Voranschläge \d{4} der Stadt Altstätten genehmigt
+      capture: html
+      content_selector: div.maincontent
+
 - bfs_id: 3232
   name: Balgach
   canton: SG
@@ -17900,6 +17920,40 @@
     - selector: a[href*='/_doc/']
       text_regex: Protokoll|Beschl|Einladung|Botschaft|Beleuchtender|Weisung|Traktanden|Ratschlag|Erl[aä]uterung|Ergebnisse|Jahresrechnung|Rechnung|Budget|Voranschlag|Vorlage|Gesch[aä]ftsbericht|Jahresbericht|Rechenschaftsbericht|Finanzbericht|Abrechnung|\bJR\b|Broschüre|Brosch[uü]re|GV-Traktandum|Antrag|Abschied|Flyer Traktanden|Kurzpublikation
 
+- bfs_id: 2581
+  name: Olten
+  canton: SO
+  language: de
+  added: 2026-11-21
+  website: https://www.olten.ch
+  vendor: i-web
+  body: parliament
+  lat: 47.3531
+  lon: 7.9078
+  listing_urls:
+  - https://www.olten.ch/sitzung
+  adapter: html_links
+  adapter_config:
+    steps:
+    - selector: a[href*='/_rte/anlass/']
+      max_follow: 30
+    - selector: a[href*='/_rte/information/']
+      text_regex: Protokoll|Abstimmungsresultat
+      max_follow: 60
+    - selector: a[href*='/_doc/']
+  sources:
+  - adapter: html_links
+    listing_urls:
+    - https://www.olten.ch/sitzung
+    adapter_config:
+      steps:
+      - selector: a[href*='/_rte/anlass/']
+        max_follow: 30
+      - selector: a[href*='/_rte/information/']
+        text_regex: ^Beschluss
+        capture: html
+        content_selector: div.row.read
+
 - bfs_id: 2530
   name: Recherswil
   canton: SO
@@ -20074,6 +20128,15 @@
         text_regex: ^Verbale|Pubblicazione risoluzioni
       volatile_params:
       - panntime
+  # Budgets (preventivi) and accounts (consuntivi): the municipal messages to the council and their
+  # annexes. The newest files are linked by page-like addresses without .pdf, which the linked
+  # archive does not take for files; this source downloads every link of the list.
+  - adapter: html_links
+    listing_urls:
+    - https://www.bellinzona.ch/Conti-comunali?MasterId=g1_34982
+    adapter_config:
+      steps:
+      - selector: div.ListCont a[href]
 - bfs_id: 5281
   name: Biasca
   canton: TI
@@ -24709,6 +24772,31 @@
     steps:
     - selector: a[href*='/PV/']
     max_follow: 80
+  sources:
+  # Budgets, accounts and annual reports: the municipality's préavis and reports among the session
+  # documents on the council's own site. The current year's sessions are linked without a year and
+  # so would rank behind every dated one: the first source reads them, the second the archive tables
+  # (2006 on; the weekly pass takes the newest, a backfill the rest).
+  - adapter: html_links
+    vendor: quicksite
+    listing_urls:
+    - https://www.conseilmontreux.ch/conseilcommunal/public/ordredujour/
+    adapter_config:
+      steps:
+      - selector: div.row.no-gutters a[href*='ordredujour/?ID=']
+        max_follow: 12
+      - selector: a[href*='download.asp?d=']
+        text_regex: budget|comptes|rapport\W*(de\W*)?gestion|cogest
+  - adapter: html_links
+    vendor: quicksite
+    listing_urls:
+    - https://www.conseilmontreux.ch/conseilcommunal/public/ordredujour/
+    adapter_config:
+      steps:
+      - selector: div.tab-pane a[href*='ordredujour/?ID=']
+        max_follow: 2
+      - selector: a[href*='download.asp?d=']
+        text_regex: budget|comptes|rapport\W*(de\W*)?gestion|cogest
 
 - bfs_id: 5492
   name: Montricher
@@ -28555,6 +28643,18 @@
       max_follow: 110
     - selector: a[href*='/_doc']
       text_regex: ^\d{8}-PR-
+  sources:
+  # Budgets, accounts and annual reports: the Gemeinderat's business items on /geschaefte, which the
+  # i-web archive collector does not follow, and every document attached to them.
+  - adapter: html_links
+    listing_urls:
+    - https://www.duebendorf.ch/geschaefte
+    adapter_config:
+      steps:
+      - selector: a[href*='/_rte/information/']
+        text_regex: Budget|Voranschlag|Jahresrechnung|Gesch[aä]ftsbericht|Finanzplan
+        max_follow: 20
+      - selector: a[href*='/_doc/']
 - bfs_id: 113
   name: Dürnten
   canton: ZH
@@ -29932,6 +30032,36 @@
     - selector: a[href*='/_doc/']
       text_regex: Protokoll|GVprot|Beschl|Einladung|Botschaft|Beleuchtender|Weisung|Traktanden|Traktandum|Ratschlag|Erl[aä]uterung|Ergebnisse|Jahresrechnung|Rechnung|Budget|Voranschlag|Finanzplan|Vorlage|Gesch[aä]ftsbericht|Jahresbericht|Rechenschaftsbericht|Finanzbericht|Abrechnung|\bJR\b|Brosch[uü]re|Antr[aä]ge?|Abschied|Anordnung|Kurzbericht|Mitteilungsblatt|Berichterstattung|Publikation|Bilanz|Bericht und Antr
 
+- bfs_id: 138
+  name: Richterswil
+  canton: ZH
+  language: de
+  added: 2026-11-21
+  website: https://www.richterswil.ch
+  vendor: i-web
+  body: assembly
+  lat: 47.2069
+  lon: 8.7042
+  listing_urls:
+  - https://www.richterswil.ch/newsarchiv
+  adapter: html_links
+  adapter_config:
+    steps:
+    - selector: a[href*='/_rte/information/']
+      text_regex: Resultate?\b.*Gemeindeversammlung|Gemeindeversammlung\b.*Resultate
+      capture: html
+      content_selector: div.subpage-content
+  sources:
+  - adapter: html_links
+    listing_urls:
+    - https://www.richterswil.ch/newsarchiv
+    adapter_config:
+      steps:
+      - selector: a[href*='/_rte/information/']
+        text_regex: Gemeindeversammlung
+        max_follow: 20
+      - selector: div.subpage-content a[href*='/_doc/']
+
 - bfs_id: 225
   name: Rickenbach (ZH)
   canton: ZH
@@ -30832,3 +30962,21 @@
       text_regex: ^Protokoll$
     since_days: 13500  # back to about 1990; the API's first year is not known (David, 2026-11-13)
     max_follow: 80
+  sources:
+  # Budgets, financial plans (FAP), accounts and annual reports, which the Gemeinderat approves, on
+  # the city website. Its pages have no anchors: each link is the href attribute of a custom element.
+  # The sitemap lists the publication pages from 2021 on; the two archive pages link 2009 to 2021.
+  - adapter: html_links
+    vendor: custom
+    listing_urls:
+    - https://www.stadt-zuerich.ch/de.sitemap.xml
+    - https://www.stadt-zuerich.ch/de/politik-und-verwaltung/finanzen/budget/vorjahre.html
+    - https://www.stadt-zuerich.ch/de/politik-und-verwaltung/finanzen/rechnung/vorjahre.html
+    adapter_config:
+      steps:
+      - selector: loc
+        url_regex: /de/aktuell/publikationen/\d{4}/(budget|fap|rechnung|geschaeftsbericht)-\d{4}(-\d{4})?\.html$
+        also_documents: true
+        max_follow: 40
+      - selector: stzh-datalist-item[meta^='PDF'][href]
+        url_attribute: href

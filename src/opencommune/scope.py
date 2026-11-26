@@ -9,6 +9,7 @@ which pages and which text.
 
 from __future__ import annotations
 
+import html
 import re
 import sqlite3
 from collections import defaultdict
@@ -52,6 +53,45 @@ def join_split_words(text: str) -> str:
     return _SPLIT.sub(join, text)
 
 
+# The markup of an OCR answer (PaddleOCR-VL's Markdown): HTML tables, centred blocks, images.
+_TABLE = re.compile(r"<table\b[^>]*>(.*?)</table>", re.S | re.I)
+_ROW = re.compile(r"<tr\b[^>]*>(.*?)</tr>", re.S | re.I)
+_CELL = re.compile(r"<t[dh]\b[^>]*>(.*?)</t[dh]>", re.S | re.I)
+_BREAK = re.compile(r"<br\s*/?>", re.I)
+_IMAGE = re.compile(r"<img\b[^>]*>", re.I)
+# Only these tags are removed: text in angle brackets that is not one of them stays.
+_TAG = re.compile(
+    r"</?(?:div|span|p|center|sup|sub|b|i|u|strong|em|thead|tbody|tfoot|caption|table|tr|t[dh])"
+    r"\b[^>]*>",
+    re.I,
+)
+_HEADING = re.compile(r"^#{1,6}[ \t]+", re.M)
+_FOOTNOTE_MARK = re.compile(r"\$\s*\^\{([^{}$]*)\}\s*\$")  # "$ ^{*} $", a mark in a table cell
+
+
+def _cells(row: str) -> str:
+    cells = [" ".join(_TAG.sub(" ", cell).split()) for cell in _CELL.findall(row)]
+    return " | ".join(cells)
+
+
+def ocr_plain_text(markdown: str) -> str:
+    """An OCR answer as plain text: each table row on a line of its own with its cells apart by
+    " | ", headings and bold marks, images and the other tags removed, entities decoded. Text in
+    angle brackets that is no HTML tag stays."""
+    text = _TABLE.sub(
+        lambda table: "\n\n" + "\n".join(_cells(row) for row in _ROW.findall(table[1])) + "\n\n",
+        markdown,
+    )
+    text = _BREAK.sub("\n", text)
+    text = _IMAGE.sub("", text)
+    text = _TAG.sub("", text)
+    text = html.unescape(text)
+    text = _HEADING.sub("", text).replace("**", "")
+    text = _FOOTNOTE_MARK.sub(r"\1", text)
+    lines = [line.rstrip() for line in text.splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
 def chars(text: str | None) -> int:
     """Non-space characters."""
     return sum(map(len, (text or "").split()))
@@ -69,13 +109,21 @@ class Page:
     raw: str | None  # the text as text.db holds it
 
     @property
+    def plain(self) -> str:
+        """`raw` without markup: an OCR answer as plain text (`ocr_plain_text`), the text layer as
+        it is."""
+        if self.source == "ocr":
+            return ocr_plain_text(self.raw or "")
+        return self.raw or ""
+
+    @property
     def usable(self) -> bool:
-        return chars(self.raw) >= MIN_CHARS
+        return chars(self.plain) >= MIN_CHARS
 
     @property
     def text(self) -> str:
-        """The text the privacy check and the index read: `raw` with split words joined."""
-        return join_split_words(self.raw or "")
+        """The text the privacy check and the index read: `plain` with split words joined."""
+        return join_split_words(self.plain)
 
 
 def page_texts(text_db: sqlite3.Connection, sha256: str) -> sqlite3.Cursor:

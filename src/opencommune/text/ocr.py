@@ -1,26 +1,36 @@
 """OCR: which pages are read (`choose`), and one worker that claims chunks of a queue, renders their
-pages and sends them to a vLLM server.
+pages and sends them to PaddleOCR-VL.
 
 `choose` takes the pages in scope (opencommune.scope) without usable text that no OCR run has
 answered yet.
 
-Pages are rendered with PyMuPDF to the queue's page size (2048 px on the longest edge for
-LightOnOCR-3-4B, lightonocr/models.py) and sent as PNG with the text "grounding" (nothing in plain
-mode), temperature 0.2, top_p 1.0, no output limit and thinking off, as LightOn's client does
-(lightonocr/client.py). LightOn renders with pdfium; on 2026-11-12 MuPDF and pdfium gave the same
-results within run-to-run noise.
+The pages are read by PaddleX's PaddleOCR-VL-1.6 pipeline, run as PaddleX's local service with the
+model behind a vLLM server: a layout model (PP-DocLayoutV3) finds the blocks of a page, PaddleOCR-VL
+reads each block, and the service returns the page as Markdown (tables as HTML). The queue records
+the options sent with every request (`OPTIONS`): the page turned upright first (orientation
+classification; no unwarping), text in image blocks read too, charts and seals not read, nothing
+left out of the Markdown (headers, footers, footnotes and page numbers stay), at most 8,192 tokens
+per block, temperature 0.
 
-Renderer processes keep pages ready, and `concurrency` requests stay in flight. The next chunk is
-claimed as soon as the current one is handed to the renderers, so the server does not wait for the
-last pages of a chunk. Each answer is appended to its chunk's result file at once.
+Pages are rendered with PyMuPDF at 144 dpi, the scale at which PaddleX renders PDF pages (2.0), and
+at most MAX_PIXELS, then sent in batches as one PDF of images per request, each page sized so that
+the service's rendering gives back the same pixels. The service reads one request at a time and
+batches its pages internally, so a few requests in flight keep it busy.
+
+Renderer processes keep pages ready. The next chunk is claimed as soon as the current one is handed
+to the renderers, so the service does not wait for the last pages of a chunk. Each answer is
+appended to its chunk's result file at once.
 
 Each PDF is checked against its name (SHA-256) before its pages are rendered; a missing or changed
 file is a render error. A page that crashes or hangs its renderer is rendered again on its own, and
-its error is recorded if it fails again. HTTP 4xx answers are final ("rejected"). Other request
-errors are tried three times here, then left for a later holder of the chunk (queue.MAX_TRIES).
+its error is recorded if it fails again. A request the service answers with an error is sent again
+page by page, so that only the page that causes it fails; a page the service refuses (HTTP 4xx) is
+final ("rejected"). Other request errors are tried three times here, then left for a later holder
+of the chunk (queue.MAX_TRIES).
 
-The worker stops when no chunk is left for it, at `until`, on SIGTERM, or when the server stops
-answering. It releases its unfinished chunks on the way out.
+The worker stops when no chunk is left for it, at `until`, on SIGTERM, or when the service stops
+answering: after MAX_FAILURES_IN_A_ROW failed requests, or at once when a request gets no answer for
+REQUEST_TIMEOUT. It releases its unfinished chunks on the way out.
 """
 
 from __future__ import annotations
@@ -51,13 +61,31 @@ from .queue import Claim, Queue
 
 log = logging.getLogger(__name__)
 
-MODEL = "lightonai/LightOnOCR-3-4B"
-REVISION = "b71010f095dc3735de7ee6b9969bff8f8f50b39a"
-MODE = "grounding"
-LONGEST_EDGE = 2048  # LightOnOCR-3-4B and -0.8B (lightonocr/models.py)
-SAMPLING = {"temperature": 0.2, "top_p": 1.0}
+MODEL = "PaddleOCR-VL-1.6-0.9B"
+PIPELINE = "PaddleOCR-VL-1.6"  # PaddleX's pipeline of that name, layout model PP-DocLayoutV3
+DPI = 144  # PaddleX renders PDF pages at scale 2.0
+MAX_PIXELS = 25_000_000  # larger pages (beyond A1 at 144 dpi) are rendered smaller
+SERVICE_SCALE = 2.0  # the scale at which the service renders the PDFs we send
+OPTIONS = {
+    "useDocOrientationClassify": True,
+    "useDocUnwarping": False,
+    "useLayoutDetection": True,
+    "useChartRecognition": False,
+    "useSealRecognition": False,
+    "useOcrForImageBlock": True,
+    "mergeLayoutBlocks": True,
+    "markdownIgnoreLabels": [],
+    "maxNewTokens": 8192,
+    "temperature": 0.0,
+    "prettifyMarkdown": True,
+    "restructurePages": False,
+    "returnMarkdownImages": False,
+    "visualize": False,
+}
+BATCH_WAIT = 5  # seconds a request waits for more rendered pages before it is sent smaller
+REQUEST_TIMEOUT = 1200  # seconds without an answer: the service hangs (a request takes 1-2 min)
 RENDER_TIMEOUT = 300  # seconds; a few vector plans never finish rendering
-MAX_FAILURES_IN_A_ROW = 25  # the server is gone: stop rather than fail every page
+MAX_FAILURES_IN_A_ROW = 25  # requests; the service is gone: stop rather than fail every page
 RETRY_SECONDS = 5  # wait before the second try, twice that before the third
 HEARTBEAT_SECONDS = 60
 REPORT_SECONDS = 300
@@ -70,10 +98,10 @@ def reading_settings() -> dict:
     """How the pages of a queue are read; the queue records it and its workers follow it."""
     return {
         "model": MODEL,
-        "revision": REVISION,
-        "mode": MODE,
-        "longest_edge": LONGEST_EDGE,
-        "sampling": SAMPLING,
+        "pipeline": PIPELINE,
+        "dpi": DPI,
+        "max_pixels": MAX_PIXELS,
+        "options": OPTIONS,
     }
 
 
@@ -105,13 +133,16 @@ def _quiet() -> None:
     pymupdf.TOOLS.mupdf_display_errors(False)
 
 
-def render(path: str, sha: str, page: int, longest_edge: int) -> dict:
-    """One page as PNG, `longest_edge` pixels on its longest edge."""
+def render(path: str, sha: str, page: int, dpi: int, max_pixels: int) -> dict:
+    """One page as PNG at `dpi`, or at about `max_pixels` where that would be more."""
     started = time.perf_counter()
     try:
         with pymupdf.open(path) as doc:
             pdf_page = doc[page - 1]
-            zoom = longest_edge / max(pdf_page.rect.width, pdf_page.rect.height)
+            zoom = dpi / 72
+            pixels = pdf_page.rect.width * pdf_page.rect.height * zoom * zoom
+            if pixels > max_pixels:
+                zoom *= (max_pixels / pixels) ** 0.5
             pixmap = pdf_page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
             png, width, height = pixmap.tobytes("png"), pixmap.width, pixmap.height
     except Exception as error:  # noqa: BLE001 - recorded per page
@@ -119,11 +150,23 @@ def render(path: str, sha: str, page: int, longest_edge: int) -> dict:
     return {
         "sha256": sha,
         "page": page,
-        "png": base64.b64encode(png).decode(),
+        "png": png,
         "width": width,
         "height": height,
         "render_s": round(time.perf_counter() - started, 3),
     }
+
+
+def document(pages: list[dict]) -> bytes:
+    """The rendered pages as one PDF of images, each page sized so that rendering it at
+    SERVICE_SCALE gives back its pixels."""
+    with pymupdf.open() as doc:
+        for page in pages:
+            sheet = doc.new_page(
+                width=page["width"] / SERVICE_SCALE, height=page["height"] / SERVICE_SCALE
+            )
+            sheet.insert_image(sheet.rect, stream=page["png"])
+        return doc.tobytes()
 
 
 def _pool(workers: int) -> ProcessPoolExecutor:
@@ -138,17 +181,25 @@ def _kill(pool: ProcessPoolExecutor) -> None:
     pool.shutdown(wait=False, cancel_futures=True)
 
 
-def _render_alone(path: str, sha: str, page: int, longest_edge: int) -> dict:
+def _render_alone(path: str, sha: str, page: int, dpi: int, max_pixels: int) -> dict:
     """One page in a fresh process, so a crash or hang is pinned on that page alone."""
     pool = _pool(1)
     try:
-        return pool.submit(render, path, sha, page, longest_edge).result(timeout=RENDER_TIMEOUT)
+        return pool.submit(render, path, sha, page, dpi, max_pixels).result(timeout=RENDER_TIMEOUT)
     except BrokenProcessPool:
         return {"sha256": sha, "page": page, "error": "renderer crashed"}
     except TimeoutError:
         return {"sha256": sha, "page": page, "error": "render timeout"}
     finally:
         _kill(pool)
+
+
+class _Refused(Exception):
+    """The service answered a request with an error."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass
@@ -172,17 +223,20 @@ class Worker:
         client: httpx.Client,
         owner: str,
         concurrency: int,
+        pages_per_request: int,
         render_workers: int,
         until: float | None,
     ):
         self.queue, self.raw, self.client, self.owner = queue, raw, client, owner
-        self.model = queue.settings["model"]
-        self.mode = queue.settings["mode"]
-        self.longest_edge = queue.settings["longest_edge"]
-        self.concurrency, self.render_workers, self.until = concurrency, render_workers, until
-        self.pages: queues.Queue = queues.Queue(maxsize=concurrency)
+        self.dpi = queue.settings["dpi"]
+        self.max_pixels = queue.settings["max_pixels"]
+        self.options = queue.settings["options"]
+        self.concurrency, self.pages_per_request = concurrency, pages_per_request
+        self.render_workers, self.until = render_workers, until
+        self.pages: queues.Queue = queues.Queue(maxsize=concurrency * pages_per_request)
         self.stop = threading.Event()
         self.lock = threading.Lock()
+        self.pdf_lock = threading.Lock()  # PyMuPDF is not thread-safe
         self.held: list[_Held] = []
         self.counts: Counter = Counter()
         self.failures_in_a_row = 0
@@ -309,6 +363,7 @@ class Worker:
         pending: set = set()
         jobs = self._jobs()
         exhausted = False
+        size = (self.dpi, self.max_pixels)
         try:
             while (not exhausted or pending) and not self.stop.is_set():
                 suspects = []
@@ -320,7 +375,7 @@ class Worker:
                         break
                     path = str(self.raw / f"{sha}.pdf")
                     try:
-                        future = pool.submit(render, path, sha, page, self.longest_edge)
+                        future = pool.submit(render, path, sha, page, *size)
                     except BrokenProcessPool:
                         suspects.append((held, sha, page))
                         break
@@ -338,9 +393,7 @@ class Worker:
                     _kill(pool)
                     pool, pending = _pool(self.render_workers), set()
                     for held, sha, page in suspects:
-                        result = _render_alone(
-                            str(self.raw / f"{sha}.pdf"), sha, page, self.longest_edge
-                        )
+                        result = _render_alone(str(self.raw / f"{sha}.pdf"), sha, page, *size)
                         self.pages.put((held, result))
         except Exception:
             log.exception("renderer loop failed")
@@ -350,19 +403,42 @@ class Worker:
             for _ in range(self.concurrency):
                 self.pages.put(None)
 
-    def _consume(self) -> None:
+    def _batches(self):
+        """Lists of (chunk, rendered page) of at most `pages_per_request`; a batch waits up to
+        BATCH_WAIT for more pages. Ends at this consumer's sentinel."""
         while (item := self.pages.get()) is not None:
-            held, page = item
+            batch, deadline = [item], time.monotonic() + BATCH_WAIT
+            while len(batch) < self.pages_per_request:
+                try:
+                    item = self.pages.get(timeout=max(0.0, deadline - time.monotonic()))
+                except queues.Empty:
+                    break
+                if item is None:
+                    yield batch
+                    return
+                batch.append(item)
+            yield batch
+
+    def _consume(self) -> None:
+        for batch in self._batches():
             if self.stop.is_set():
                 continue
-            key = {"sha256": page["sha256"], "page": page["page"]}
             try:
-                if "error" in page:
-                    self._write(held, {**key, "status": "render_error", "error": page["error"]})
-                else:
-                    self._write(held, {**key, **self._ask(page)})
+                rendered = []
+                for held, page in batch:
+                    key = {"sha256": page["sha256"], "page": page["page"]}
+                    if "error" in page:
+                        self._write(held, {**key, "status": "render_error", "error": page["error"]})
+                    else:
+                        rendered.append((held, page))
+                if rendered:
+                    answers = self._ask([page for _, page in rendered])
+                    for (held, page), answer in zip(rendered, answers, strict=True):
+                        self._write(
+                            held, {"sha256": page["sha256"], "page": page["page"], **answer}
+                        )
             except Exception:
-                log.exception("writing the answer to %s failed", key)
+                log.exception("writing the answers to %d pages failed", len(batch))
                 self._halt(WORKER_FAILED)
 
     def _answered(self, ok: bool) -> None:
@@ -372,58 +448,64 @@ class Worker:
         if failed:
             self._halt(SERVER_FAILED)
 
-    def _ask(self, page: dict) -> dict:
-        content = [
-            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{page['png']}"}}
-        ]
-        if self.mode == "grounding":
-            content.append({"type": "text", "text": "grounding"})
-        body = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": content}],
-            **SAMPLING,
-            "chat_template_kwargs": {"enable_thinking": False},
-        }
+    def _ask(self, pages: list[dict]) -> list[dict]:
+        """One answer per page. A request the service answers with an error is sent again page by
+        page; a single page it refuses (HTTP 4xx) is final."""
+        with self.pdf_lock:
+            pdf = document(pages)
+        body = {"file": base64.b64encode(pdf).decode(), "fileType": 0, **self.options}
         sent = time.monotonic()
+        refused: _Refused | None = None
         message = ""
         for attempt in range(3):
             if attempt and self.stop.wait(RETRY_SECONDS * attempt):
                 break
             try:
-                response = self.client.post("/chat/completions", json=body)
+                response = self.client.post(
+                    "/layout-parsing", json=body, timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=30)
+                )
+                if response.is_error:
+                    raise _Refused(
+                        response.status_code, f"HTTP {response.status_code}: {response.text[:500]}"
+                    )
+                results = _results(response.json(), len(pages))
+            except httpx.TimeoutException as error:
+                message, refused = f"no answer within {REQUEST_TIMEOUT} s: {error}", None
+                self._halt(SERVER_FAILED)  # a hung service would hold the GPU until the job ends
+                break
             except httpx.HTTPError as error:
-                message = f"{type(error).__name__}: {error}"
+                message, refused = f"{type(error).__name__}: {error}", None
                 continue
-            if response.is_client_error:
-                self._answered(True)
-                return {
-                    "status": "rejected",
-                    "error": f"HTTP {response.status_code}: {response.text[:500]}",
-                }
-            if response.is_error:
-                message = f"HTTP {response.status_code}: {response.text[:500]}"
+            except _Refused as error:
+                message, refused = str(error), error
+                if error.status < 500:
+                    break
                 continue
-            try:
-                result = response.json()
-                choice, usage = result["choices"][0], result["usage"]
-                text = choice["message"].get("content") or ""
             except (ValueError, KeyError, IndexError, TypeError) as error:
-                message = f"unexpected answer: {type(error).__name__}: {error}"
+                message, refused = f"unexpected answer: {type(error).__name__}: {error}", None
                 continue
             self._answered(True)
-            return {
-                "status": "ok",
-                "finish_reason": choice.get("finish_reason"),
-                "prompt_tokens": usage["prompt_tokens"],
-                "completion_tokens": usage["completion_tokens"],
-                "width": page["width"],
-                "height": page["height"],
-                "render_s": page["render_s"],
-                "request_s": round(time.monotonic() - sent, 3),
-                "text": text,
-            }
+            seconds = round(time.monotonic() - sent, 3)
+            return [
+                {
+                    "status": "ok",
+                    "width": page["width"],
+                    "height": page["height"],
+                    "render_s": page["render_s"],
+                    "request_s": seconds,
+                    "request_pages": len(pages),
+                    **result,
+                }
+                for page, result in zip(pages, results, strict=True)
+            ]
+        if refused is not None and len(pages) > 1 and not self.stop.is_set():
+            log.warning("%d pages together: %s; sending them one by one", len(pages), message)
+            return [answer for page in pages for answer in self._ask([page])]
+        if refused is not None and refused.status < 500:
+            self._answered(True)
+            return [{"status": "rejected", "error": message}]
         self._answered(False)
-        return {"status": "request_error", "error": message}
+        return [{"status": "request_error", "error": message}] * len(pages)
 
     # --- the run ------------------------------------------------------------------------------
 
@@ -460,16 +542,42 @@ class Worker:
         return {"stopped": self.reason, "seconds": round(time.monotonic() - started), **self.counts}
 
 
+def _results(answer: dict, pages: int) -> list[dict]:
+    """Text, blocks and orientation of each page from the service's answer."""
+    if answer.get("errorCode", 0) != 0:
+        raise ValueError(f"error {answer['errorCode']}: {answer.get('errorMsg')}")
+    items = answer["result"]["layoutParsingResults"]
+    if len(items) != pages:
+        raise ValueError(f"{len(items)} results for {pages} pages")
+    results = []
+    for item in items:
+        pruned = item.get("prunedResult") or {}
+        blocks = pruned.get("parsing_res_list") or []
+        results.append(
+            {
+                "angle": (pruned.get("doc_preprocessor_res") or {}).get("angle"),
+                "blocks": [[block.get("block_label"), block.get("block_bbox")] for block in blocks],
+                "text": item["markdown"]["text"],
+            }
+        )
+    return results
+
+
 def run(
     queue: Queue,
     raw: Path,
     url: str,
     name: str,
     concurrency: int,
+    pages_per_request: int,
     render_workers: int,
     until: float | None,
 ) -> dict:
-    """Work on the queue with the vLLM server at `url` (its OpenAI API, ending in /v1)."""
+    """Work on the queue with the PaddleX service at `url`."""
+    if queue.settings.get("model") != MODEL:
+        raise RuntimeError(
+            f"this code reads with {MODEL}; the queue wants {queue.settings['model']}"
+        )
     owner = f"{name}@{socket.gethostname()}"
     record = queue.root / "workers" / name / "worker.json"
     record.parent.mkdir(parents=True, exist_ok=True)
@@ -481,6 +589,7 @@ def run(
         "url": url,
         "raw": str(raw),
         "concurrency": concurrency,
+        "pages_per_request": pages_per_request,
         "render_workers": render_workers,
         "until": until,
         "pymupdf": pymupdf.__version__,
@@ -491,18 +600,14 @@ def run(
     record.write_text(json.dumps(facts, indent=2) + "\n")
     with httpx.Client(
         base_url=url,
-        timeout=httpx.Timeout(None, connect=30),  # no output limit: a page may run long
+        timeout=httpx.Timeout(None, connect=30),  # a request of many pages may run long
         limits=httpx.Limits(max_connections=concurrency, max_keepalive_connections=concurrency),
         trust_env=False,
     ) as client:
-        response = client.get("/models", timeout=60)
-        response.raise_for_status()
-        served = [model["id"] for model in response.json()["data"]]
-        if queue.settings["model"] not in served:
-            raise RuntimeError(
-                f"the server serves {served}, the queue wants {queue.settings['model']}"
-            )
-        worker = Worker(queue, raw, client, owner, concurrency, render_workers, until)
+        client.get("/health", timeout=60).raise_for_status()
+        worker = Worker(
+            queue, raw, client, owner, concurrency, pages_per_request, render_workers, until
+        )
         result = worker.run()
     record.write_text(json.dumps({**facts, "finished": time.time(), **result}, indent=2) + "\n")
     return result

@@ -29,7 +29,7 @@ publishes and whether the crawler can collect it, and why not when it cannot.
 
 ## Where the data lives
 
-Nothing but configuration is in git. `DATA_DIR` (default `data/`) holds the crawl state, the raw
+Nothing but configuration and the list of released versions (`data/releases.csv`) is in git. `DATA_DIR` (default `data/`) holds the crawl state, the raw
 documents (`raw/`, or `RAW_DATA_DIR`) with a JSON sidecar each, the processing outputs and the
 database. Raw documents and extraction outputs name private persons and are never published. When
 `DATA_DIR` is outside the repository, set `CONFIG_DIR=data` so the configuration still comes from the
@@ -47,7 +47,9 @@ make setup                      # Python environment and an empty SQLite databas
 uv run opencommune bfs-sync     # the official commune list (BFS) into data/bfs/
 uv run opencommune fetch        # documents of the curated sources into data/raw/
 uv run opencommune catalog      # the document catalogue in the database
-uv run opencommune build        # the register and access tables the web server reads
+uv run opencommune build        # the serving database the web server reads
+uv run opencommune build-fulltext  # the full-text index built from it
+uv run opencommune release --note "..."  # name the two as the next version of the data
 ```
 
 `uv run opencommune --help` lists every command.
@@ -74,8 +76,26 @@ data/communes.yaml, source lists
   -> crawl       -> raw/<sha>.pdf + <sha>.json sidecar
   -> processing  -> decisions and full-text index      (being moved into this repository)
   -> catalog     -> opencommune.db: pdf_catalog
-  -> build       -> opencommune.db: register and access tables for the server
+  -> build       -> serving.db: documents, sections, register and access tables for the server
+  -> build-fulltext -> fulltext.db: the redacted page text of the search
+  -> release     -> data/releases.csv: the two files as the next version of the data
 ```
+
+## Versions of the data
+
+A version is a serving database and the full-text index built from it, deployed together. It is
+named by the day of its release, `2026.11.26` (`2026.11.26.2` for a second one that day).
+
+1. `opencommune release --note "..."` runs after `build` and `build-fulltext`. It checks that both
+   files are one build of the same code and of the current ledger, then appends the version's row
+   to `data/releases.csv` (counts of documents, pages, communes and searchable pages, of which from
+   OCR, the classification run, the commit) and writes the row into the full-text index. Commit
+   the ledger with the deploy.
+2. `build` copies the ledger into the serving database, with the files first downloaded each day.
+   The site shows the versions on the about page (`/api/releases`), the current one from the
+   full-text index, and names it in the start page's schema.org `Dataset`.
+3. Rows are only added, never changed. A copy of the data published elsewhere carries the version's
+   name: a Hugging Face upload is tagged with it, a Zenodo record uses it as its version.
 
 ## Classification
 

@@ -11,8 +11,9 @@ import json
 import re
 import time
 from types import SimpleNamespace
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
+import httpx
 from bs4 import BeautifulSoup
 
 from ..config import settings
@@ -34,6 +35,25 @@ PAGE_HINT = re.compile(
 FILE = re.compile(r"\.(?:pdf|zip|docx?|xlsx?|pptx?|jpe?g|png|gif|mp[34])$", re.I)
 DOCUMENT = re.compile(r"/_doc(?:/|$)|\.pdf(?:\?|$)", re.I)
 PUBLICATION_DETAIL = re.compile(r"/_rte/publikation/\d+/?$", re.I)
+# The page of one session, publication, business item or vote. A refresh does not read it again
+# while the queue is unfinished: new ones are found through the listing pages that link to them.
+RECORD_PAGE = re.compile(r"/_rte/[^/]+/\d+/?$", re.I)
+# A commune with a parliament publishes the most (business items, proposals, minutes): it reads this
+# many page budgets per turn and takes its turn as often as a commune with a quarter of its pages.
+PARLIAMENT_SHARE = 4
+# A queued page can answer with a file: an i-web publication with a single attachment redirects to
+# it. The file is a PDF by these content types, or by a generic one when its name does not say
+# otherwise; the download checks the bytes.
+PDF_TYPES = frozenset({"application/pdf", "application/x-pdf"})
+BINARY_TYPES = frozenset(
+    {
+        "application/octet-stream",
+        "binary/octet-stream",
+        "application/download",
+        "application/force-download",
+        "application/x-download",
+    }
+)
 PAGER = "a[rel~='next'], .pagination a[href], .pager a[href], a.page-link[href]"
 ADAPTER = HtmlLinksAdapter()
 
@@ -60,11 +80,13 @@ def same_site(url: str, website: str) -> bool:
     ).removeprefix("www.")
 
 
-def page_links(html: str, base: str, website: str) -> tuple[list[dict], list[str], list[dict]]:
+def page_links(html: str, base: str, website: str) -> tuple[list[dict], dict, list[dict]]:
     """All attachments, recognised archive/session pages and explicitly non-PDF attachments.
 
     No title-based document filter and no date cut-off. Embedded i-web tables go through the
-    existing adapter; dates are read from documents, never inherited from a generic page.
+    existing adapter; dates are read from documents, never inherited from a generic page. Pages map
+    to the link that names them (title, date, this page as `listing_url`), or None: a page can turn
+    out to be a file, which then takes its title and date from that link.
     """
     soup = BeautifulSoup(unpack_embedded_tables(html), "html.parser")
     excluded = {}
@@ -76,21 +98,25 @@ def page_links(html: str, base: str, website: str) -> tuple[list[dict], list[str
                 if url and DOCUMENT.search(url):
                     excluded[url] = {"url": url, "reason": kind.get_text(" ", strip=True)}
             row.decompose()
-    documents = []
+    named = {}
     for link in ADAPTER.extract_links(
         str(soup), base, AdapterStep(selector="a[href]", context="row"), None, "dmy"
     ):
-        url = clean_url(link.url)
-        if url and DOCUMENT.search(url) and url not in excluded:
-            documents.append(
+        if url := clean_url(link.url):
+            named.setdefault(
+                url,
                 {
-                    "url": url,
                     "title": link.text,
                     "date": str(link.date) if link.date else None,
                     "date_precision": link.date_precision,
                     "listing_url": base,
-                }
+                },
             )
+    documents = [
+        {"url": url, **link}
+        for url, link in named.items()
+        if DOCUMENT.search(url) and url not in excluded
+    ]
     pages = {}
     pagers = {id(a) for a in soup.select(PAGER)}
     for a in soup.select("a[href], link[rel~='next'][href]"):
@@ -105,8 +131,53 @@ def page_links(html: str, base: str, website: str) -> tuple[list[dict], list[str
             or id(a) in pagers
             or a.name == "link"
         ):
-            pages[url] = None
-    return documents, list(pages), list(excluded.values())
+            pages[url] = named.get(url)
+    return documents, pages, list(excluded.values())
+
+
+def content_type(response: httpx.Response) -> str:
+    return response.headers.get("content-type", "").split(";")[0].strip().lower()
+
+
+def file_name(response: httpx.Response) -> str:
+    """The name of a file: from Content-Disposition, else the last segment of the URL that answered."""
+    disposition = response.headers.get("content-disposition", "")
+    match = re.search(r"filename\*\s*=\s*(?:[\w-]+'[^']*')?([^;]+)", disposition, re.I)
+    match = match or re.search(r"filename\s*=\s*\"?([^\";]+)", disposition, re.I)
+    name = match[1] if match else urlsplit(str(response.url)).path.rsplit("/", 1)[-1]
+    return unquote(name).strip().strip('"')
+
+
+def file_answer(url: str, response: httpx.Response, website: str) -> dict:
+    """What a queued page that answered with a file stands for. The file goes by the first URL of
+    the redirect chain that a listing linking it directly would have given (on i-web the
+    /_doc/<id> hop, not the publication page nor the named file it ends at), so that it is held and
+    downloaded once however it is linked; without such a hop, by the page's own URL."""
+    chain = [*(str(r.url) for r in response.history), str(response.url)]
+    target = next(
+        (
+            u
+            for hop in chain
+            if (u := clean_url(hop)) and DOCUMENT.search(u) and same_site(u, website)
+        ),
+        url,
+    )
+    kind, name = content_type(response), file_name(response)
+    pdf = kind in PDF_TYPES or (
+        name.lower().endswith(".pdf") if FILE.search(name) else kind in BINARY_TYPES
+    )
+    return {"url": target, "name": name, "content_type": kind, "pdf": pdf}
+
+
+def page_text(response: httpx.Response, url: str) -> str:
+    """The body of a streamed page as text; a broken transfer is a failed page."""
+    try:
+        response.read()
+    except httpx.TimeoutException as exc:
+        raise http.FetchFailure("timeout", url, http._describe(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise http.FetchFailure("http", url, http._describe(exc)) from exc
+    return response.text
 
 
 def initial(entry) -> dict:
@@ -134,6 +205,76 @@ def initial(entry) -> dict:
     }
 
 
+def share(entry) -> int:
+    """The page budgets a commune reads per turn."""
+    return PARLIAMENT_SHARE if any(p.body == "parliament" for p in entry.publications) else 1
+
+
+def restart(state: dict) -> None:
+    """Start a refresh. A finished walk starts over from the seeds. An unfinished one keeps its
+    queue and the record pages it has read, and reads its seeds and listing pages again first, so
+    that a long queue is not started over at every refresh. A page that was a file has no links."""
+    if state["pending"]:
+        again = [*state["seeds"]]
+        again += [
+            u
+            for u, page in state["pages"].items()
+            if page["status"] != "file" and not RECORD_PAGE.search(urlsplit(u).path)
+        ]
+        for url in again:
+            state["pages"].pop(url, None)
+        state["pending"] = list(dict.fromkeys([*again, *state["pending"]]))
+        state["resolved"] = {
+            p["resolved_url"]: u for u, p in state["pages"].items() if p["status"] == "ok"
+        }
+    else:
+        state["pending"], state["pages"], state["resolved"] = state["seeds"].copy(), {}, {}
+    state["refreshed_at"] = dt.datetime.now(dt.UTC).isoformat()
+
+
+def requeue_files(state: dict) -> None:
+    """A checkpoint written before a page could be a file holds such a page as failed, with kind
+    `content_type`. It is queued again, first, and read once more: the checkpoint kept neither the
+    content type nor the address the page redirected to."""
+    files = [
+        url
+        for url, page in state["pages"].items()
+        if page["status"] == "failed" and page.get("kind") == "content_type"
+    ]
+    for url in files:
+        del state["pages"][url]
+    state["pending"] = list(dict.fromkeys([*files, *state["pending"]]))
+
+
+def add_file(state: dict, url: str, file: dict) -> None:
+    """Record a queued page that answered with a file: a PDF becomes a document with the title, date
+    and listing of the link that queued the page, any other file is excluded."""
+    state["pages"][url] = {
+        "status": "file",
+        "url": file["url"],
+        "content_type": file["content_type"],
+    }
+    if not file["pdf"]:
+        state["excluded"][file["url"]] = {
+            "url": file["url"],
+            "reason": file["content_type"] or file["name"],
+        }
+        return
+    link = state["linked_from"].get(url) or {}
+    document = {
+        "url": file["url"],
+        "title": link.get("title") or file["name"],
+        "date": link.get("date"),
+        "date_precision": link.get("date_precision", "day"),
+        "listing_url": link.get("listing_url", url),
+    }
+    if file["url"] != url:
+        document["via"] = url
+    held = state["documents"].setdefault(file["url"], {**document, "listings": []})
+    if link.get("listing_url") and link["listing_url"] not in held["listings"]:
+        held["listings"].append(link["listing_url"])
+
+
 class WebsiteChanged(ValueError):
     """The register names another site than the saved inventory; a person must review it."""
 
@@ -156,12 +297,14 @@ def discover_one(
                 f"{entry.bfs_id}: website changed; move its old inventory before rescanning"
             )
         state["website"] = entry.website
+    requeue_files(state)
     if refresh:
-        state["pending"], state["pages"], state["resolved"] = state["seeds"].copy(), {}, {}
-        state["refreshed_at"] = dt.datetime.now(dt.UTC).isoformat()
+        restart(state)
     state.setdefault(
         "resolved", {p["resolved_url"]: u for u, p in state["pages"].items() if p["status"] == "ok"}
     )
+    # The link that queued a page (title, date, listing), kept until the page is read.
+    state.setdefault("linked_from", {})
     if retry_failed:
         for url, page in state["pages"].items():
             if page["status"] == "failed" and url not in state["pending"]:
@@ -178,20 +321,27 @@ def discover_one(
         url = state["pending"][0]  # leave queued until the page and its discoveries are persisted
         if url in state["resolved"]:
             state["pending"].pop(0)
+            state["linked_from"].pop(url, None)
             save(state)
             continue
+        file = None
         try:
             if not polite.allowed(url):
                 raise http.FetchFailure("robots", url, "disallowed by robots.txt")
-            response = http._send(client, polite, client.build_request("GET", url))
+            # Streamed: a page that is a file is known by its headers, and its body is left to the
+            # download.
+            response = http._send(client, polite, client.build_request("GET", url), stream=True)
             try:
                 http._ensure_ok(response, url)
                 final_url = str(response.url)
                 if not same_site(final_url, entry.website):
                     raise http.FetchFailure("redirect", url, "listing redirects to another site")
-                if "html" not in response.headers.get("content-type", "text/html"):
-                    raise http.FetchFailure("content_type", url, "listing is not HTML")
-                documents, pages, excluded = page_links(response.text, final_url, entry.website)
+                kind = content_type(response)
+                if kind and "html" not in kind:
+                    file = file_answer(url, response, entry.website)
+                else:
+                    text = page_text(response, url)
+                    documents, pages, excluded = page_links(text, final_url, entry.website)
             finally:
                 response.close()
         except http.FetchFailure as exc:
@@ -205,24 +355,31 @@ def discover_one(
         except (ValueError, TypeError, KeyError) as exc:
             state["pages"][url] = {"status": "failed", "kind": "parse", "message": str(exc)}
         else:
-            state["resolved"][final_url] = url
-            state["pages"][url] = {
-                "status": "ok",
-                "resolved_url": final_url,
-                "documents": len(documents),
-            }
-            for document in documents:
-                held = state["documents"].setdefault(document["url"], {**document, "listings": []})
-                if final_url not in held["listings"]:
-                    held["listings"].append(final_url)
-            state["excluded"].update({e["url"]: e for e in excluded})
-            for page in pages:
-                if (
-                    page not in state["pages"]
-                    and page not in state["pending"]
-                    and page not in state["resolved"]
-                ):
-                    state["pending"].append(page)
+            if file is not None:
+                add_file(state, url, file)
+            else:
+                state["resolved"][final_url] = url
+                state["pages"][url] = {
+                    "status": "ok",
+                    "resolved_url": final_url,
+                    "documents": len(documents),
+                }
+                for document in documents:
+                    held = state["documents"].setdefault(
+                        document["url"], {**document, "listings": []}
+                    )
+                    if final_url not in held["listings"]:
+                        held["listings"].append(final_url)
+                state["excluded"].update({e["url"]: e for e in excluded})
+                for page, link in pages.items():
+                    if page in state["pages"] or page in state["resolved"]:
+                        continue
+                    if page not in state["pending"]:
+                        state["pending"].append(page)
+                    if link:
+                        state["linked_from"].setdefault(page, link)
+        if state["pages"][url]["status"] != "failed":
+            state["linked_from"].pop(url, None)  # a failed page may still turn out to be a file
         state["pending"].pop(0)
         save(state)
         if state["pages"][url].get("kind") == "robots":
@@ -252,6 +409,9 @@ def download_one(
             break
         previous = state["downloads"].get(url, {})
         known = index.get(store.canonical_url(url))
+        if not (known and store.held(known["sha256"])) and doc.get("via"):
+            # a page that redirected to the file may be held under its own URL
+            known = index.get(store.canonical_url(doc["via"]))
         if known and store.held(known["sha256"]):
             state["downloads"][url] = {"status": "held", "sha256": known["sha256"]}
             continue
@@ -266,7 +426,9 @@ def download_one(
             break
         attempted += 1
         # Archive scope is mixed: dates and legislative type are not inferred from the listing.
-        link = DocumentLink(**{k: v for k, v in doc.items() if k != "listings"}, body=commune.body)
+        link = DocumentLink(
+            **{k: v for k, v in doc.items() if k not in {"listings", "via"}}, body=commune.body
+        )
         try:
             store._download(link, commune, client, polite, index)
         except http.FetchFailure as exc:
@@ -346,7 +508,7 @@ def run(
             entries,
             key=lambda e: (
                 (read(e.bfs_id) or {}).get("refreshed_at", "") if refresh else "",
-                len((read(e.bfs_id) or {}).get("pages", {})),
+                len((read(e.bfs_id) or {}).get("pages", {})) / share(e),
             ),
         )
     deadline = time.monotonic() + max_minutes * 60 if max_minutes is not None else None
@@ -371,7 +533,7 @@ def run(
                         entry,
                         client,
                         polite,
-                        page_budget=page_budget,
+                        page_budget=page_budget * share(entry),
                         retry_failed=retry_failed,
                         refresh=refresh,
                         deadline=deadline,

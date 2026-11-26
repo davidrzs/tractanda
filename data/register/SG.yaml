@@ -376,23 +376,35 @@
 - bfs_id: 3251
   name: Altstätten
   canton: SG
-  status: candidate
+  status: configured
   website: https://www.altstaetten.ch
   vendor: i-web
   reachable: true
-  checked: 2026-10-18
-  checked_by: crawler dry run (unverified)
-  notes: 'Automated probe: the session list (/sitzung) shows 36 sessions since 2009 (Bürgerversammlung, Bürgerversammlung
-    (Budget 2018), Bürgerversammlung (Budget 2019), Bürgerversammlung (Budget 2020), Bü); the newest three carry
-    no minutes or decision list, and the site map names no minutes page.'
+  checked: 2026-11-21
+  checked_by: listing review
+  notes: Bürgerversammlung, twice a year (accounts in May, budget in November). /sitzung lists 37 assemblies from
+    2009-05-11 to 2026-05-06 and two ballots held instead (2020, 2021); the session pages give time, place and at
+    most the agenda as text, no documents. The minutes are not published online; after each assembly they are laid
+    open at the city chancery for 14 days (Art. 49 GG, news notice of 2017-05-24). The news archive (/newsarchiv,
+    about 2250 items since 2009) reports the decisions and votes of 13 assemblies, 2009-11 to 2016-05; later items
+    about assemblies are invitations or interviews. /abstimmungen holds ballots only; official notices have been on
+    publikationen.sg.ch since 2019. Checked were the site map, the news archive, /abstimmungen, the 2025 and 2026
+    session pages and the i-web inventory of /publikationen and /reglemente (85 PDFs, none from an assembly).
   publications:
   - body: assembly
+    kind: results
+    status: configured
+    listing_url: https://www.altstaetten.ch/newsarchiv
+    from: '2009-11-26'
+    to: '2016-05-11'
+    how: 'html_links capture: html on the news reports ''Bürgerversammlung ... vom <date>'' and ''Voranschläge <year>
+      ... genehmigt'' (div.maincontent); the budget reports carry the news date, the day after the assembly'
+  - body: assembly
     kind: minutes
-    status: candidate
+    status: not_published
     listing_url: https://www.altstaetten.ch/sitzung
-    obstacle: the i-web session table lists 37 Bürgerversammlungen 2009-2026, but the session pages (2023 and 2026
-      checked) carry no documents
-    how: documents may sit under /abstimmungen or /uebersichtpolitik; not checked
+    obstacle: the minutes are only laid open at the city chancery for 14 days after each assembly; the session pages
+      carry no documents
 - bfs_id: 3252
   name: Eichberg
   canton: SG

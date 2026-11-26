@@ -9,8 +9,8 @@ use sqlx::{Decode, QueryBuilder, Sqlite, SqlitePool, Type};
 
 use super::contains_pattern;
 use crate::models::{
-    CommuneRef, Count, Document, DocumentDetail, DocumentPage, DocumentRow, Facets, Run, RunRef,
-    RunRow, Section, linkable_url,
+    CommuneRef, Count, Document, DocumentDetail, DocumentPage, DocumentRow, Facets, Release,
+    Releases, Run, RunRef, RunRow, Section, linkable_url,
 };
 
 pub const DEFAULT_LIMIT: i64 = 20;
@@ -340,6 +340,39 @@ pub async fn runs(pool: &SqlitePool) -> sqlx::Result<Vec<Run>> {
             .fetch_all(pool)
             .await?;
     Ok(rows.into_iter().map(Run::from).collect())
+}
+
+/// `GET /api/releases`: the versions of the ledger the serving database was built with, then the
+/// one the full-text index was released as (`release.py`), and the files first downloaded each day.
+pub async fn releases(pool: &SqlitePool, fulltext: bool) -> sqlx::Result<Releases> {
+    let mut releases: Vec<Release> = sqlx::query_as(
+        "SELECT version, date, documents, pages, communes, searchable_pages, ocr_pages, \
+         classification_run, git_commit, note FROM releases ORDER BY rowid",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut current = None;
+    if fulltext {
+        let written: Option<String> =
+            sqlx::query_scalar("SELECT value FROM fulltext.build WHERE key = 'release'")
+                .fetch_optional(pool)
+                .await?;
+        // unreadable JSON counts as not released
+        if let Some(release) = written.and_then(|j| serde_json::from_str::<Release>(&j).ok()) {
+            current = Some(release.version.clone());
+            if !releases.iter().any(|r| r.version == release.version) {
+                releases.push(release);
+            }
+        }
+    }
+    let downloads = sqlx::query_as("SELECT day, files FROM downloads ORDER BY day")
+        .fetch_all(pool)
+        .await?;
+    Ok(Releases {
+        current,
+        releases,
+        downloads,
+    })
 }
 
 /// `GET /original/{sha256}`: the document's URL at `commune`, else the first by BFS id; only

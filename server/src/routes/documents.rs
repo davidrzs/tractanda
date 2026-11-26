@@ -1,4 +1,5 @@
-//! `/api/documents`, `/api/documents/{sha256}`, `/api/runs` and the `/original/{sha256}` redirect.
+//! `/api/documents`, `/api/documents/{sha256}`, `/api/runs`, `/api/releases` and the
+//! `/original/{sha256}` redirect.
 
 use axum::Json;
 use axum::extract::State;
@@ -10,7 +11,7 @@ use serde::Deserialize;
 use crate::AppState;
 use crate::db::documents::{self, Search};
 use crate::error::{ApiError, ApiResult, Path, Query};
-use crate::models::{DocumentDetail, Run};
+use crate::models::{DocumentDetail, Releases, Run};
 use crate::usage::SearchTotal;
 
 pub async fn list(
@@ -39,6 +40,10 @@ pub async fn get(
 
 pub async fn runs(State(state): State<AppState>) -> ApiResult<Vec<Run>> {
     Ok(Json(documents::runs(&state.db).await?))
+}
+
+pub async fn releases(State(state): State<AppState>) -> ApiResult<Releases> {
+    Ok(Json(documents::releases(&state.db, state.fulltext).await?))
 }
 
 #[derive(Deserialize, JsonSchema)]

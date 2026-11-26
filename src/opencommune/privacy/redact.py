@@ -59,6 +59,17 @@ BORN_NAME = re.compile(
     rf"({NAME_WORD}(?:[ \t]+{NAME_WORD}){{0,3}})[ \t]*[,(]?[ \t]*"
     r"(?i:geb\.|geboren|née?\s+le|nat[oa]\s+il)\s*(?:am\s+)?\d"
 )
+# a person listed with a year of birth, as naturalisation decisions do: the name before "1954,
+# celibe" (a civil status), or after "al signor" or "alla signora" and before a year
+CIVIL_STATUS = (
+    r"celibe|nubile|coniugat[oa]|sposat[oa]|divorziat[oa]|vedov[oa]|separat[oa]|ledig|verheiratet|"
+    r"geschieden|verwitwet|c[ée]libataire|mari[ée]e?|divorc[ée]e?|veu(?:f|ve)"
+)
+LISTED_NAME = rf"({NAME_WORD}(?:[ \t]+(?:{NAME_WORD}|nat[oa]|née?)){{0,5}})"
+YEAR_NAME = re.compile(
+    rf"{LISTED_NAME},[ \t]*(?:19|20)\d{{2}},[ \t]*(?i:{CIVIL_STATUS})(?!\w)"
+    rf"|(?i:\bal(?:la)?[ \t]+signor[a]?)[ \t]+{LISTED_NAME},[ \t]*(?:19|20)\d{{2}}(?!\d)"
+)
 # not inside a figure: budgets write 1'076 234.50
 MOBILE = re.compile(
     r"(?<![\w+.'\u2019-])(?:(?:\+|00)41\s?(?:\(0\)\s?)?|0)7[5-9][\s/]?\d{3}[\s.]?\d{2}[\s.]?\d{2}"
@@ -67,10 +78,13 @@ MOBILE = re.compile(
 
 
 def by_form(text: str) -> list:
-    """The spans found by their form: dates of birth, the name before them, mobile numbers."""
+    """The spans found by their form: dates of birth, the name before them, names listed with a
+    year of birth, mobile numbers."""
+    listed = [(m, 1 if m.group(1) else 2) for m in YEAR_NAME.finditer(text)]
     return (
         [["birth_date", m.start(1), m.end(1), 1.0] for m in BIRTH_DATE.finditer(text)]
         + [["private_person", m.start(1), m.end(1), 1.0] for m in BORN_NAME.finditer(text)]
+        + [["private_person", m.start(g), m.end(g), 1.0] for m, g in listed]
         + [["mobile_phone", m.start(), m.end(), 1.0] for m in MOBILE.finditer(text)]
     )
 
@@ -103,8 +117,10 @@ RULE = (
     "part of a commune's name or stands in lower case elsewhere in the document; an address only "
     "when it holds a number and a word that is not part of a commune's name; an e-mail address "
     "or secret as found. A date of birth after geb., geboren, né(e) le or nato/a il, the "
-    "capitalised words right before that word (the person born) and a Swiss mobile number (07x, "
-    "+41 7x) are found by their form. Overlapping spans become one mark. A "
+    "capitalised words right before that word (the person born), a name listed with a year of "
+    "birth (the capitalised words before '1954, celibe' or another civil status, or after 'al "
+    "signor' or 'alla signora' and before a year) and a Swiss mobile number (07x, +41 7x) are "
+    "found by their form. Overlapping spans become one mark. A "
     "page is indexed only when the privacy check read the same text."
 )
 

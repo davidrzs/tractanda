@@ -24,6 +24,7 @@ from pathlib import Path
 
 from . import scope
 from .privacy import redact, store
+from .release import code_commit
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +44,8 @@ CREATE TABLE pages (
 CREATE VIRTUAL TABLE page_fts USING fts5(
     text, tokenize = "unicode61 remove_diacritics 2 tokenchars '［］'"
 );
--- How the file was built: the checksums of the inputs, the counts (JSON) and the rules.
+-- How the file was built: the checksums of the inputs, the commit of the code, the counts (JSON)
+-- and the rules; once released, the version's row of the ledger (`release`, JSON).
 CREATE TABLE build (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """  # noqa: RUF001 - the brackets are meant
 
@@ -54,6 +56,8 @@ RULES = (
     "Documents whose body is private are left out. "
     f"Pages whose text has fewer than {scope.MIN_CHARS} non-space characters are left out. "
     "The text is the page_text of text.db: the OCR answer if one is ok, else the text layer. "
+    "An OCR answer is read as plain text: each table row on a line with its cells apart by ' | ', "
+    "headings, bold marks, images and HTML tags removed, entities decoded. "
     "A word split at a line end is joined: a letter, '-', a line break and a lower-case letter "
     "become one word, unless the next word is und, oder, bis, bzw or sowie (a shortened compound "
     "such as 'Ein- und Ausgaben'). Apart from that and the redaction below, the text is not "
@@ -71,6 +75,7 @@ def run(fulltext_path: Path, serving_path: Path, text_path: Path, privacy_path: 
         "serving_db_sha256": _sha256(serving_path),
         "text_db_sha256": _sha256(text_path),
         "privacy_db_sha256": _sha256(privacy_path),
+        "git_commit": code_commit() or "",
     }
     tmp = fulltext_path.with_name(fulltext_path.name + ".tmp")
     tmp.unlink(missing_ok=True)

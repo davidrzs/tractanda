@@ -264,15 +264,20 @@ def within_source(polite, source):
     return http.Scoped(polite, source.allows, "URL outside configured source scope")
 
 
+def listing_allowed(source, url):
+    """A page the source may read as a listing: within its crawl sections when it traverses."""
+    if source.traverses and not source.allows_listing(url):
+        return False
+    return source.external_listing(url) or source.allows(url)
+
+
 def within_listings(polite, source):
     """Requests limited to the source's listings: within its crawl sections when it traverses."""
-
-    def accepts(url):
-        if source.traverses and not source.allows_listing(url):
-            return False
-        return source.external_listing(url) or source.allows(url)
-
-    return http.Scoped(polite, accepts, "listing outside configured crawl sections")
+    return http.Scoped(
+        polite,
+        lambda url: listing_allowed(source, url),
+        "listing outside configured crawl sections",
+    )
 
 
 def documents(html, listing, source):
@@ -344,9 +349,8 @@ class ConfigurationChanged(ValueError):
     """A source's configuration no longer matches its saved inventory; a person must review it."""
 
 
-def fetch_one(
-    source, entry, client, polite, index, *, limit, deadline=None, refresh=False, retry_failed=False
-):
+def _signature(source):
+    """The configuration a checkpoint was built from, as saved in it."""
     signature = source.model_dump(mode="json")
     if source.finsta_exports is None:
         signature.pop("finsta_exports")
@@ -362,6 +366,55 @@ def fetch_one(
             signature.pop(field)
     if source.wix_file_owner is None:
         signature.pop("wix_file_owner")
+    return signature
+
+
+def accept(source):
+    """A person reviewed a changed configuration: its checkpoint takes it on. Listing pages it
+    removed or put out of scope leave the queue, with their pages; documents it removed or found
+    only on such pages leave the inventory unless they are held. Held files stay. Returns what was
+    dropped, or None when the source has no checkpoint or nothing changed."""
+    with locked():
+        state = read(source.bfs_id)
+        signature = _signature(source)
+        if state is None or state["source"] == signature:
+            return None
+        previous = state["source"]
+        removed_seeds = set(previous.get("listing_urls", [])) - set(source.listing_urls)
+        removed_files = set(previous.get("document_urls", [])) - set(source.selected_documents)
+
+        def listing_kept(url):
+            return url not in removed_seeds and listing_allowed(source, url)
+
+        frontier = state.get("frontier", {})
+        state["frontier"] = {u: f for u, f in frontier.items() if listing_kept(u)}
+        pages = state["pages"]
+        state["pages"] = {u: p for u, p in pages.items() if u in state["frontier"]}
+        dropped = []
+        for url, listing in list(state["documents"].items()):
+            if state["downloads"].get(url, {}).get("status") == "held":
+                continue
+            if url in source.selected_documents:
+                continue
+            if url in removed_files or not source.allows(url) or not listing_kept(listing):
+                dropped.append(url)
+                state["documents"].pop(url)
+                state["downloads"].pop(url, None)
+        state["source"] = signature
+        state["status"] = "pending"
+        save(state)
+        return {
+            "bfs_id": source.bfs_id,
+            "listings_dropped": len(frontier) - len(state["frontier"]),
+            "pages_dropped": len(pages) - len(state["pages"]),
+            "documents_dropped": len(dropped),
+        }
+
+
+def fetch_one(
+    source, entry, client, polite, index, *, limit, deadline=None, refresh=False, retry_failed=False
+):
+    signature = _signature(source)
     state = read(source.bfs_id) or {
         "bfs_id": source.bfs_id,
         "source": signature,

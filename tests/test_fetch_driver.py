@@ -561,6 +561,53 @@ def test_allowed_redirects_are_followed_and_every_hop_counted(site):
     assert run.requests == 4  # robots.txt, listing, its redirect target, the document
 
 
+class Recorded(httpx.SyncByteStream):
+    """A response body that records each time it is read."""
+
+    def __init__(self, content: bytes, reads: list) -> None:
+        self.content, self.reads = content, reads
+
+    def __iter__(self):
+        self.reads.append(self.content)
+        yield self.content
+
+
+def test_a_followed_page_that_redirects_to_a_pdf_is_the_document_under_its_link(site):
+    # an i-web publication with a single attachment redirects through /_doc/<id> to the file
+    reads: list[bytes] = []
+    site.add(
+        f"{HOST}/publikationen",
+        200,
+        '<a href="/_rte/publikation/5">Jahresrechnung 2025</a>'
+        '<a href="/_rte/publikation/6">Budget 2026</a>',
+    )
+    site.add(f"{HOST}/_rte/publikation/5", 200, '<a href="/_doc/1">Jahresrechnung 2025</a>')
+    site.add(f"{HOST}/_doc/1", 200, PDF + b"1", {"content-type": "application/pdf"})
+    site.add(f"{HOST}/_rte/publikation/6", 302, b"", {"location": "/_doc/2"})
+    site.add(f"{HOST}/_doc/2", 302, b"", {"location": "/_docn/2/Budget.pdf"})
+    site.answer(
+        f"{HOST}/_docn/2/Budget.pdf",
+        lambda request: httpx.Response(
+            200, headers={"content-type": "application/pdf"}, stream=Recorded(PDF + b"2", reads)
+        ),
+    )
+    c = commune(
+        listing_url=f"{HOST}/publikationen",
+        steps=[
+            AdapterStep(selector="a[href*='/_rte/publikation/']"),
+            AdapterStep(selector="a[href*='/_doc']"),
+        ],
+    )
+    run = fetch_one(site, c)
+    assert {d.url: (d.title, d.listing_url) for d in run.discovered} == {
+        f"{HOST}/_doc/1": ("Jahresrechnung 2025", f"{HOST}/_rte/publikation/5"),
+        f"{HOST}/_doc/2": ("Budget 2026", f"{HOST}/_rte/publikation/6"),
+    }
+    assert len(run.downloaded) == 2 and not run.errors
+    # the walk read the file's headers, the download its body
+    assert len(site.calls_to(f"{HOST}/_docn/2/Budget.pdf")) == 2 and len(reads) == 1
+
+
 def test_a_redirect_loop_ends_as_an_http_error(site):
     site.add(f"{HOST}/protokolle", 302, b"", {"location": "/protokolle"})
     run = fetch_one(site)

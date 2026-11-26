@@ -13488,6 +13488,20 @@
   - https://www.wila.ch/public/upload/assets/2802/Merbklatt%20KSA%20Betreuung%20im%20Alter%202025%20-%20mit%20Adresse%20Wila.pdf?fp=1747719803328
   crawl_prefixes:
   - https://www.wila.ch/verwaltung/online-schalter.html/43
+- bfs_id: 230
+  website: https://parlament.winterthur.ch
+  vendor: i-web
+  listing_urls:
+  - https://stadt.winterthur.ch/themen/arbeit-steuern-wirtschaft/staedtische-finanzen/budget-finanzplan
+  - https://stadt.winterthur.ch/themen/arbeit-steuern-wirtschaft/staedtische-finanzen/rechnung-der-stadt
+  external_listing_prefixes:
+  - https://stadt.winterthur.ch/themen/arbeit-steuern-wirtschaft/staedtische-finanzen
+  document_url_prefixes:
+  - https://stadt.winterthur.ch/download/media/
+  attribution_note: 'stadt.winterthur.ch is the website of the City of Winterthur''s administration; the registered
+    website parlament.winterthur.ch is that of its parliament. Its section Städtische Finanzen publishes the city''s
+    budgets and financial plans (from 2018) and accounts (from 2016), served under /download/media/. Only files
+    linked from that section are accepted; the rest of the media library is outside scope.'
 - bfs_id: 4081
   website: https://www.widen.ch
   vendor: govis
@@ -19812,6 +19826,7 @@
   - https://www.montreux.ch/guichet-virtuel/population
   - https://www.montreux.ch/guichet-virtuel/sport
   - https://www.montreux.ch/guichet-virtuel/subvention-pour-des-projets-de-cohesion-sociale
+  - https://www.montreux.ch/autorites-et-services-communaux/publications/rapport-de-gestion
   crawl_prefixes:
   - https://www.montreux.ch/accueil
   - https://www.montreux.ch/guichet-virtuel
@@ -23196,6 +23211,9 @@
   - https://www.frauenfeld.ch/politik-verwaltung/politik/gemeinderat/archiv-der-gemeinderatsprotokolle/details.html/779/news/12079/newsarchive/1
   - https://www.frauenfeld.ch/politik-verwaltung/politik/gemeinderat/archiv-der-gemeinderatsprotokolle/details.html/779/news/12080/newsarchive/1
   - https://www.frauenfeld.ch/politik-verwaltung/politik/gemeinderat/archiv-der-gemeinderatsprotokolle/details.html/779/news/12081/newsarchive/1
+  - https://www.frauenfeld.ch/politik-verwaltung/verwaltung/stadtverwaltung/departement-fuer-finanzen-und-zentrales/finanzen-und-steuern/stadtbuchhaltung/budget-geschaeftsberichte-und-rechnungen.html/1099/opendcategory/4106
+  - https://www.frauenfeld.ch/politik-verwaltung/verwaltung/stadtverwaltung/departement-fuer-finanzen-und-zentrales/finanzen-und-steuern/stadtbuchhaltung/budget-geschaeftsberichte-und-rechnungen.html/1099/opendcategory/6203
+  - https://www.frauenfeld.ch/politik-verwaltung/verwaltung/stadtverwaltung/departement-fuer-finanzen-und-zentrales/finanzen-und-steuern/stadtbuchhaltung/budget-geschaeftsberichte-und-rechnungen.html/1099/opendcategory/4088
   crawl_prefixes:
   - https://www.frauenfeld.ch/politik-verwaltung/politik/gemeinderat/archiv-der-gemeinderatsprotokolle.html/520
 - bfs_id: 4571

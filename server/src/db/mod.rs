@@ -46,7 +46,7 @@ pub async fn open_read_only(
 pub async fn check_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     sqlx::query(
         "SELECT 1 FROM communes, runs, documents, documents_fts, document_communes, sections, \
-         register, register_publications, access_observations LIMIT 0",
+         register, register_publications, access_observations, releases, downloads LIMIT 0",
     )
     .execute(pool)
     .await

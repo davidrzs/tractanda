@@ -219,6 +219,40 @@ def test_configuration_identity_and_saved_inventory_must_match(site):
     assert calls == before
 
 
+def test_accepting_a_narrowed_configuration_resumes_without_the_removed_pages(site):
+    _, routes, calls, _, _ = site
+    wide = source(
+        listing_urls=[HOST + "/docs", HOST + "/notices"],
+        document_urls=[HOST + "/a.pdf", HOST + "/named.pdf"],
+    )
+    routes[HOST + "/a.pdf"] = pdf("a")
+    routes[HOST + "/docs"] = httpx.Response(200, text='<a href="/x.pdf">x</a>')
+    routes[HOST + "/x.pdf"] = pdf("x")
+    routes[HOST + "/notices"] = httpx.Response(
+        200, text='<a href="/held.pdf">held</a><a href="/gone.pdf">gone</a>'
+    )
+    routes[HOST + "/held.pdf"] = pdf("held")
+    state = run(site, wide, limit=10)
+    assert state["downloads"][HOST + "/named.pdf"]["status"] == "failed"
+    assert state["downloads"][HOST + "/gone.pdf"]["status"] == "failed"
+    narrow = source(listing_urls=[HOST + "/docs"], document_urls=[HOST + "/a.pdf"])
+    with pytest.raises(ValueError, match="configuration changed"):
+        run(site, narrow)
+    assert archive.accept(narrow) == {
+        "bfs_id": 1,
+        "listings_dropped": 1,
+        "pages_dropped": 1,
+        "documents_dropped": 2,
+    }
+    assert archive.accept(narrow) is None
+    before = list(calls)
+    state = run(site, narrow, limit=10)
+    assert calls == before
+    assert state["status"] == "complete"
+    assert set(state["downloads"]) == {HOST + "/a.pdf", HOST + "/x.pdf", HOST + "/held.pdf"}
+    assert HOST + "/notices" not in state["frontier"]
+
+
 def test_check_without_the_bfs_snapshot_skips_only_the_identity(site, monkeypatch):
     entry = site[0]
     config = source(document_urls=[HOST + "/a.pdf"])

@@ -9,7 +9,7 @@ import pytest
 from opencommune.config import settings
 from opencommune.crawl import http, iweb, store
 from opencommune.register import RegisterEntry
-from opencommune.schemas import AdapterConfig, AdapterStep, CommuneConfig
+from opencommune.schemas import AdapterConfig, AdapterStep, CommuneConfig, DocumentLink
 
 HOST = "https://example.test"
 PDF = b"%PDF-1.4\narchive test\n%%EOF"
@@ -26,7 +26,10 @@ def site(tmp_path, monkeypatch):
 
     def answer(request):
         calls.append(str(request.url))
-        status, body, *headers = routes.get(request.url.raw_path.decode(), (404, "absent"))
+        route = routes.get(request.url.raw_path.decode(), (404, "absent"))
+        if callable(route):
+            return route(request)
+        status, body, *headers = route
         return httpx.Response(status, content=body, headers=headers[0] if headers else {})
 
     with http.make_client(httpx.MockTransport(answer)) as client:
@@ -69,7 +72,9 @@ def test_all_titles_future_dates_pagination_and_explicit_non_pdf():
     docs, pages, excluded = iweb.page_links(html, HOST, HOST)
     assert [d["url"] for d in docs] == [HOST + "/_doc/1", HOST + "/budget.pdf"]
     assert docs[1]["date"] == "2099-01-01"
-    assert pages == [HOST + "/_rte/anlass/99", HOST + "/list?page=2"]
+    assert list(pages) == [HOST + "/_rte/anlass/99", HOST + "/list?page=2"]
+    assert pages[HOST + "/_rte/anlass/99"]["title"] == "Session"
+    assert pages[HOST + "/_rte/anlass/99"]["listing_url"] == HOST
     assert excluded[0]["url"] == HOST + "/_doc/2"
 
 
@@ -215,6 +220,64 @@ def test_refresh_finds_new_documents_without_discarding_previous_inventory(site)
     assert set(state["documents"]) == {HOST + "/old.pdf", HOST + "/new.pdf"}
 
 
+def test_refresh_keeps_an_unfinished_queue_and_reads_its_listings_first(site):
+    routes, calls, client, polite = site
+    events = [f"/_rte/anlass/{n}" for n in range(4)]
+    home = '<a href="/archiv">Archiv</a>' + "".join(f'<a href="{u}">Sitzung</a>' for u in events)
+    routes["/"] = (200, home)
+    routes["/archiv"] = (200, '<a href="/alt.pdf">Budget</a>')
+    for path in events:
+        routes[path] = (200, "<p>Sitzung</p>")
+    seeds = [HOST + p for p in iweb.SEEDS]
+    state = iweb.discover_one(entry(), client, polite, page_budget=len(seeds) + 2)
+    assert state["pending"] == [HOST + p for p in events[1:]]
+    routes["/"] = (200, home + '<a href="/neu.pdf">Reglement</a>')
+    state = iweb.discover_one(entry(), client, polite, refresh=True, page_budget=1)
+    assert HOST + "/neu.pdf" in state["documents"]
+    assert state["pending"] == [*seeds[1:], HOST + "/archiv", *(HOST + p for p in events[1:])]
+    iweb.discover_one(entry(), client, polite)
+    assert calls.count(HOST + events[0]) == 1
+    assert calls.count(HOST + "/archiv") == 2
+    # a finished walk starts over
+    state = iweb.discover_one(entry(), client, polite, refresh=True, page_budget=0)
+    assert state["pending"] == seeds and not state["pages"]
+
+
+def test_a_commune_with_a_parliament_reads_more_pages_and_comes_up_sooner(site, monkeypatch):
+    from contextlib import nullcontext
+
+    from opencommune import communes
+    from opencommune.register import Publication
+
+    routes, calls, client, _polite = site
+    monkeypatch.setattr(communes, "bfs_register", lambda: {})
+    monkeypatch.setattr(http, "make_client", lambda **kw: nullcontext(client))
+    monkeypatch.setattr(http.Politeness, "_network", lambda *args: "network")
+    town = RegisterEntry(
+        bfs_id=2,
+        name="Town",
+        canton="ZH",
+        website=HOST,
+        vendor="i-web",
+        publications=[Publication(body="parliament", kind="minutes", status="candidate")],
+    )
+    queued = {}
+    for commune, read_before in ((entry(), 4), (town, 12)):
+        state = iweb.initial(commune)
+        state["pages"] = {
+            f"{HOST}/{commune.bfs_id}/{n}": {"status": "absent"} for n in range(read_before)
+        }
+        queued[commune.bfs_id] = [f"/_rte/anlass/{commune.bfs_id}{n}" for n in range(6)]
+        state["pending"] = [HOST + p for p in queued[commune.bfs_id]]
+        iweb.save(state)
+        for path in queued[commune.bfs_id]:
+            routes[path] = (200, "<p>Sitzung</p>")
+    # 12 pages read count as 3 for the town, fewer than the 4 of the other commune
+    iweb.run([entry(), town], mode="sync", page_budget=1, emit=lambda _: None)
+    read = [url.removeprefix(HOST) for url in calls if "/_rte/" in url]
+    assert read == [*queued[2][: iweb.PARLIAMENT_SHARE], queued[1][0]]
+
+
 def test_deadline_leaves_pages_and_downloads_queued(site):
     routes, calls, client, polite = site
     routes["/"] = (200, '<a href="/doc.pdf">Budget</a>')
@@ -240,6 +303,191 @@ def test_redirect_target_is_not_crawled_again_when_linked_by_its_own_page(site):
     assert iweb.summary(state)["listing_queue_exhausted"]
     assert calls.count(HOST + "/publikationen/1") == 1
     assert state["documents"][HOST + "/a.pdf"]["listing_url"] == HOST + "/publikationen/1"
+
+
+class Body(httpx.SyncByteStream):
+    """A response body that records each time it is read."""
+
+    def __init__(self, content: bytes, reads: list):
+        self.content, self.reads = content, reads
+
+    def __iter__(self):
+        self.reads.append(self.content)
+        yield self.content
+
+
+def single_attachment(routes, reads, publication=5, doc=7, name="ZA_Vereinb.pdf"):
+    """An i-web publication with one attachment: it redirects through the /_doc/ route to the file."""
+    routes[f"/_rte/publikation/{publication}"] = (
+        302,
+        "",
+        {"location": f"/publikationen/{publication}"},
+    )
+    routes[f"/publikationen/{publication}"] = (302, "", {"location": f"/_doc/{doc}"})
+    routes[f"/_doc/{doc}"] = (302, "", {"location": f"/_docn/{doc}/{name}"})
+    routes[f"/_docn/{doc}/{name}"] = lambda request: httpx.Response(
+        200, headers={"content-type": "application/pdf"}, stream=Body(PDF, reads)
+    )
+
+
+def test_a_publication_that_redirects_to_a_pdf_is_a_document_with_its_link(site):
+    routes, calls, client, polite = site
+    reads = []
+    routes["/"] = (200, '<a href="/publikationen">Publikationen</a>')
+    routes["/publikationen"] = (
+        200,
+        (
+            "<table><tr><td>Zusammenarbeitsvereinbarung</td><td>01.02.2026</td>"
+            '<td><a href="/_rte/publikation/5">Zusammenarbeitsvereinbarung</a></td></tr></table>'
+        ),
+    )
+    single_attachment(routes, reads)
+    state = iweb.discover_one(entry(), client, polite)
+    assert state["pages"][HOST + "/_rte/publikation/5"] == {
+        "status": "file",
+        "url": HOST + "/_doc/7",
+        "content_type": "application/pdf",
+    }
+    assert state["documents"] == {
+        HOST + "/_doc/7": {
+            "url": HOST + "/_doc/7",
+            "title": "Zusammenarbeitsvereinbarung",
+            "date": "2026-02-01",
+            "date_precision": "day",
+            "listing_url": HOST + "/publikationen",
+            "via": HOST + "/_rte/publikation/5",
+            "listings": [HOST + "/publikationen"],
+        }
+    }
+    assert iweb.summary(state)["failed_pages"] == 0
+    assert iweb.summary(state)["listing_queue_exhausted"]
+    assert not state["linked_from"]
+    assert reads == []  # discovery read the headers only
+    iweb.download_one(state, config(), client, polite, store.load_index())
+    assert state["downloads"][HOST + "/_doc/7"]["status"] == "held"
+    assert reads == [PDF] and calls.count(HOST + "/_docn/7/ZA_Vereinb.pdf") == 2
+    sidecar = json.loads(next(settings.raw_dir.glob("*.json")).read_text())
+    assert sidecar["source_url"] == HOST + "/_doc/7"
+    assert sidecar["listing_url"] == HOST + "/publikationen"
+    assert sidecar["listing_title"] == "Zusammenarbeitsvereinbarung"
+    assert sidecar["listing_date"] == "2026-02-01"
+
+
+def test_a_file_linked_directly_and_through_a_publication_is_one_document(site):
+    routes, _calls, client, polite = site
+    reads = []
+    routes["/"] = (
+        200,
+        '<a href="/_doc/7">Reglement</a><a href="/_rte/publikation/5">Reglement (Publikation)</a>',
+    )
+    single_attachment(routes, reads)
+    state = iweb.discover_one(entry(), client, polite)
+    assert list(state["documents"]) == [HOST + "/_doc/7"]
+    assert state["documents"][HOST + "/_doc/7"]["title"] == "Reglement"  # the first link wins
+    iweb.download_one(state, config(), client, polite, store.load_index())
+    assert reads == [PDF] and len(list(settings.raw_dir.glob("*.pdf"))) == 1
+    # a file held under the publication's own URL (a curated source lists those) is not fetched again
+    routes["/"] = (200, '<a href="/_rte/publikation/6">Budget</a>')
+    single_attachment(routes, reads, publication=6, doc=8)
+    store._download(
+        DocumentLink(
+            url=HOST + "/_rte/publikation/6", title="Budget", body="assembly", listing_url=HOST
+        ),
+        config(),
+        client,
+        polite,
+        store.load_index(),
+    )
+    assert len(reads) == 2
+    state = iweb.discover_one(entry(), client, polite, refresh=True)
+    assert state["documents"][HOST + "/_doc/8"]["via"] == HOST + "/_rte/publikation/6"
+    iweb.download_one(state, config(), client, polite, store.load_index())
+    assert state["downloads"][HOST + "/_doc/8"]["status"] == "held" and len(reads) == 2
+
+
+def test_a_page_that_serves_a_file_itself_keeps_its_url_and_other_files_are_excluded(site):
+    routes, _calls, client, polite = site
+    routes["/"] = (
+        200,
+        (
+            '<a href="/online-schalter/1/download">Gesuch Reglement</a>'
+            '<a href="/online-schalter/2/download">Formular Download</a>'
+            '<a href="/_rte/information/3">Information Dokument</a>'
+            '<a href="/_rte/information/4">Information Dokument</a>'
+        ),
+    )
+    pdf = {"content-type": "application/pdf", "content-disposition": 'inline; filename="R.pdf"'}
+    routes["/online-schalter/1/download"] = (200, PDF, pdf)
+    docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    routes["/online-schalter/2/download"] = (302, "", {"location": "/_doc/9"})
+    routes["/_doc/9"] = (200, b"PK", {"content-type": docx})
+    routes["/_rte/information/3"] = (
+        200,
+        b"PK",
+        {
+            "content-type": "application/octet-stream",
+            "content-disposition": "attachment; filename*=UTF-8''Pl%C3%A4ne.zip",
+        },
+    )
+    routes["/_rte/information/4"] = (
+        200,
+        PDF,
+        {"content-type": "application/octet-stream", "content-disposition": "filename=Bericht.pdf"},
+    )
+    state = iweb.discover_one(entry(), client, polite)
+    one, four = HOST + "/online-schalter/1/download", HOST + "/_rte/information/4"
+    assert list(state["documents"]) == [one, four]
+    assert state["documents"][one]["title"] == "Gesuch Reglement"
+    assert state["documents"][one]["listing_url"] == HOST + "/"
+    assert "via" not in state["documents"][one]
+    assert state["excluded"] == {
+        HOST + "/_doc/9": {"url": HOST + "/_doc/9", "reason": docx},
+        HOST + "/_rte/information/3": {
+            "url": HOST + "/_rte/information/3",
+            "reason": "application/octet-stream",
+        },
+    }
+    assert iweb.summary(state)["failed_pages"] == 0
+    assert iweb.summary(state)["non_pdf"] == 2
+    # a refresh of an unfinished queue reads the listings again, never the files
+    state["pending"].append(HOST + "/_rte/anlass/1")
+    iweb.save(state)
+    state = iweb.discover_one(entry(), client, polite, refresh=True, page_budget=0)
+    assert one not in state["pending"] and state["pages"][one]["status"] == "file"
+
+
+def test_pages_saved_as_failed_files_are_queued_again_first_and_recovered(site):
+    from opencommune.crawl import coverage_report
+
+    routes, calls, client, polite = site
+    reads = []
+    single_attachment(routes, reads)
+    routes["/archiv"] = (200, '<a href="/_doc/1">Budget</a>')
+    old = iweb.initial(entry())
+    old["pending"] = [HOST + "/archiv"]
+    old["pages"] = {
+        HOST + "/": {"status": "ok", "resolved_url": HOST + "/", "documents": 0},
+        HOST + "/_rte/publikation/5": {
+            "status": "failed",
+            "kind": "content_type",
+            "message": "listing is not HTML",
+        },
+        HOST + "/_rte/anlass/2": {"status": "failed", "kind": "http", "message": "HTTP 500"},
+    }
+    iweb.save(old)
+    assert coverage_report.checkpoint("iweb", iweb.read(1))["failed_pages"] == 2
+    state = iweb.discover_one(entry(), client, polite, page_budget=1)
+    hops = ["/_rte/publikation/5", "/publikationen/5", "/_doc/7", "/_docn/7/ZA_Vereinb.pdf"]
+    assert calls == [HOST + "/robots.txt", *(HOST + p for p in hops)]
+    assert state["pages"][HOST + "/_rte/publikation/5"]["status"] == "file"
+    assert state["documents"][HOST + "/_doc/7"]["title"] == "ZA_Vereinb.pdf"
+    assert state["documents"][HOST + "/_doc/7"]["listing_url"] == HOST + "/_rte/publikation/5"
+    assert state["pending"] == [HOST + "/archiv"]
+    report = coverage_report.checkpoint("iweb", state)
+    assert report["failed_pages"] == 1 and report["failure_kinds"] == {"http": 1}
+    assert report["candidate_urls"] == 1 and report["unattempted_urls"] == 1
+    iweb.discover_one(entry(), client, polite)
+    assert calls.count(HOST + "/_rte/publikation/5") == 1  # recovered once, not again
 
 
 def test_automatic_archive_identity_and_review_queue(site, monkeypatch):

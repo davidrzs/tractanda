@@ -22,6 +22,8 @@ data/*
 !data/archive-sources.yaml
 !data/linked-sources.yaml
 !data/cantons.yaml
+# the ledger of released versions (opencommune release)
+!data/releases.csv
 
 # editor
 .idea/
@@ -47,3 +49,6 @@ frontend/playwright-report/
 notes/
 docs/decisions/
 CLAUDE.local.md
+# the how-tos in docs/ stay local; only docs/CHATBOT.md is in git
+docs/*
+!docs/CHATBOT.md

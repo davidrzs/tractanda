@@ -1620,22 +1620,42 @@
 - bfs_id: 138
   name: Richterswil
   canton: ZH
-  status: candidate
+  status: configured
   website: https://www.richterswil.ch
   vendor: i-web
   reachable: true
-  checked: 2026-10-18
-  checked_by: crawler dry run (unverified)
-  notes: 'Automated probe: no session list and no minutes page in the site map.'
+  checked: 2026-11-21
+  checked_by: listing review
+  notes: Gemeindeversammlung, up to four a year (March, June, September, December). /gemeindeversammlungstermine lists
+    93 assemblies from 2004-12-08; the session pages give time and place and point to www.richterswil.ch/gemeindeversammlung,
+    which redirects to /sitzung. That page and /naechstegemeindeversammlung (the 'Aktenauflage') only embed the
+    canton of Zurich's results app (app.statistik.zh.ch/wahlen_abstimmungen, explanations and results per assembly
+    item), whose data path robots.txt disallows. The news archive (/newsarchiv, 272 items since 2008) has 'Resultate
+    (der) Gemeindeversammlung vom ...' items for 10 assemblies (2008-09 to 2014-11 and from 2025-12) with the votes
+    as text; older items attach press releases and the Weisungsheft, invitations attach the official notice PDF.
+    No minutes (Protokoll) were found on the site; official notices are in the Digitales Amtsblatt (epublikation.ch)
+    since 2022-07.
   publications:
   - body: assembly
+    kind: results
+    status: configured
+    listing_url: https://www.richterswil.ch/newsarchiv
+    from: '2008-09-09'
+    to: '2026-06-17'
+    how: 'html_links capture: html on the news items ''Resultate ... Gemeindeversammlung'' (div.subpage-content); second
+      source, 2 hops: the PDFs attached to every news item about an assembly (press releases, Weisungsheft, invitations)'
+  - body: assembly
+    kind: documents
+    status: blocked_robots
+    listing_url: https://app.statistik.zh.ch/wahlen_abstimmungen/prod/?gebiet=138&types=g
+    obstacle: robots.txt of app.statistik.zh.ch allows only /wahlen_abstimmungen/prod; the app loads its data from
+      /wahlen_abstimmungen/data_prod/, which it disallows
+  - body: assembly
     kind: minutes
-    status: candidate
+    status: not_found
     listing_url: https://www.richterswil.ch/gemeindeversammlungstermine
-    obstacle: the i-web session table (93 sessions since 2004) works, but the session pages carry no documents (2025
-      page checked; /sitzung, /allgemeineszurgemeindeversammlung also without documents); minutes are published
-      elsewhere or not at all
-    how: no Protokolle page found; /gemeindeversammlungred and the news archive are not examined
+    obstacle: the session pages carry no documents (2025 and 2026 pages checked) and no Protokoll is linked anywhere
+      on the site
 - bfs_id: 139
   name: Rüschlikon
   canton: ZH
@@ -2010,6 +2030,16 @@
     listing_url: https://www.duebendorf.ch/sitzung
     how: 'html_links, 2 hops: /sitzung (245 sessions since 2004, ''abgesagt'' excluded) -> files named YYYYMMDD-PR-...
       (Protokoll, Beschlüsse); old config matched ^Protokoll and missed them'
+  - body: parliament
+    kind: documents
+    status: configured
+    listing_url: https://www.duebendorf.ch/geschaefte
+    from: '2024'
+    to: '2026'
+    how: 'html_links, 2 hops: the business items on /geschaefte (embedded i-web table) whose title names a budget,
+      financial plan, annual accounts or annual report, then every attached document; the i-web archive collector
+      does not follow /geschaefte; dry run: 11 items, 39 documents 2024-2026 (budgets 2025 and 2026, financial plans,
+      accounts 2023-2025, annual reports 2023 and 2024)'
 - bfs_id: 192
   name: Egg
   canton: ZH
@@ -2665,16 +2695,29 @@
   website: https://www.gemeinderat-zuerich.ch
   vendor: cmi-paris
   reachable: true
-  checked: 2026-10-18
-  checked_by: crawler dry run (unverified)
+  checked: 2026-11-21
+  checked_by: listing review and crawler dry run
   notes: 'One ten-year session query with m=1000 answers HTTP 500, so the adapter queries one calendar year at a
     time; the dry run lists 951 protocol PDFs from 2016-10 on (two per session: the protocol and the "substanziell"
-    protocol).'
+    protocol). Budgets, financial plans, accounts and annual reports are on the city website www.stadt-zuerich.ch,
+    whose pages link files only from custom elements, without anchors; its list of the current accounts and the
+    archive of annual reports since 1859 load through a search API (JavaScript), so annual reports before 2024 are
+    not reached.'
   publications:
   - body: parliament
     kind: minutes
     status: configured
     listing_url: https://www.gemeinderat-zuerich.ch/api/sitzung/searchdetails/
+  - body: parliament
+    kind: documents
+    status: configured
+    listing_url: https://www.stadt-zuerich.ch/de.sitemap.xml
+    from: '2009'
+    to: '2026'
+    how: 'html_links, 2 hops: the sitemap''s publication pages budget-, fap-, rechnung- and geschaeftsbericht-<year>
+      (2021 on), then their PDF entries (stzh-datalist-item, link in the href attribute); the archive pages
+      budget/vorjahre and rechnung/vorjahre directly; dry run: 137 PDFs, budgets 2010-2027, financial plans
+      2013-2016 to 2027-2030, accounts 2010-2025, annual reports 2024 and 2025'
 - bfs_id: 291
   name: Andelfingen
   canton: ZH

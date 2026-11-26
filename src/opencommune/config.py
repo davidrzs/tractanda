@@ -108,6 +108,11 @@ class Settings(BaseSettings):
     def cantons_file(self) -> Path:
         return self.config_root / "cantons.yaml"
 
+    # The released versions of the data (`release`), reviewed in git.
+    @property
+    def releases_file(self) -> Path:
+        return self.config_root / "releases.csv"
+
     def ensure_dirs(self) -> None:
         for d in (
             self.raw_dir,

@@ -8,7 +8,8 @@ Layout:
 1. `/opt/opencommune/opencommune-server`: the release binary (`make server`).
 2. `/opt/opencommune/site/`: the static front end (`make frontend`, the contents of `frontend/build`).
 3. `/opt/opencommune/data/opencommune.db`: a copy of the serving database that `opencommune build`
-   writes to `DATA_DIR/serving.db` (out of WAL mode, so the read-only server needs no `-shm` file).
+   writes to `DATA_DIR/serving.db` (out of WAL mode, so the read-only server needs no `-shm` file),
+   and next to it `fulltext.db`, the full-text index `opencommune build-fulltext` writes from it.
 4. `/var/lib/opencommune/usage.sqlite3`: usage statistics, written by the server.
 
 Install:
@@ -43,6 +44,10 @@ the next question tries again. Answers kept from the last 7 days are still given
 `no_credit`. Top up or raise the limit: answers come back within 15 minutes, without a restart.
 
 To update, replace the binary, the site or the database and run `systemctl restart opencommune`.
+New data goes out as a version: `opencommune build`, `opencommune build-fulltext` and
+`opencommune release --note "..."` on the build machine, then both database files together; commit
+`data/releases.csv`. When a new server needs new tables, deploy the database first: the running
+server ignores tables it does not know, and a new server refuses to start without them.
 Logs: `journalctl -u opencommune`. Settings: `server/API.md`.
 
 Search engines: with `SEARCH_INDEXING=true` the pages may be indexed and `robots.txt` lists the

@@ -3,7 +3,8 @@ a new file that replaces the old one only when it is complete.
 
 Sources: the communes and the catalogue in the main database (`opencommune catalog`), the URL
 index (when a file was first downloaded), the classification answers in the processing database,
-the prompt record of the classification run, the coverage register and the access observations.
+the prompt record of the classification run, the coverage register, the access observations and
+the ledger of released versions (`release`).
 
 Only files with an answer from the classification run are listed (David, 2026-11-13). From an
 answer, the enumerated fields, the page numbers and the title and body as printed reach this file;
@@ -17,10 +18,13 @@ import json
 import logging
 import os
 import sqlite3
+from collections import Counter
 from contextlib import closing
+from dataclasses import astuple
 from importlib.resources import files
 from pathlib import Path
 
+from . import release
 from .classify import record as records
 from .classify.render import pages_to_send
 from .communes import load_communes
@@ -62,6 +66,8 @@ TABLES = (
     "register",
     "register_publications",
     "access_observations",
+    "releases",
+    "downloads",
 )
 
 
@@ -101,9 +107,11 @@ def run(serving_path: Path, database_path: Path, process_path: Path) -> dict[str
             with db:
                 db.executescript(files(__package__).joinpath("serving.sql").read_text())
                 register = load_register()
+                first_seen = _first_seen()
                 _communes(db, database_path, register)
-                _documents(db, database_path, process_path)
+                _documents(db, database_path, process_path, first_seen)
                 _register(db, register)
+                _history(db, first_seen)
                 # The title index reads `documents` (serving.sql), so it comes last.
                 db.execute("INSERT INTO documents_fts (documents_fts) VALUES ('rebuild')")
             counts = {t: db.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in TABLES}
@@ -175,7 +183,7 @@ def _year(date: str | None, years: list, listing_date: str | None) -> int | None
     return int(listing_date[:4]) if listing_date else None
 
 
-def _documents(db, database_path: Path, process_path: Path) -> None:
+def _documents(db, database_path: Path, process_path: Path, first_seen: dict[str, str]) -> None:
     record = records.load(CLASSIFICATION)
     with closing(sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)) as main:
         catalogue = main.execute("SELECT sha256, source_date FROM pdf_catalog").fetchall()
@@ -192,7 +200,6 @@ def _documents(db, database_path: Path, process_path: Path) -> None:
         }
 
     known = {row[0] for row in db.execute("SELECT bfs_id FROM communes")}
-    first_seen = _first_seen()
     # Nothing is dated after the day of the build: a later date or year is a misreading (a target
     # year, a typo) and would otherwise sort first in every list.
     today = dt.date.today()
@@ -270,6 +277,25 @@ def _documents(db, database_path: Path, process_path: Path) -> None:
             run_note(record),
             len(listed),
         ),
+    )
+
+
+def _history(db, first_seen: dict[str, str]) -> None:
+    """The released versions as the ledger has them now, the files first downloaded each day, and
+    how this file was built."""
+    db.executemany(
+        f"INSERT INTO releases VALUES ({','.join('?' * len(release.COLUMNS))})",
+        [astuple(r) for r in release.load(settings.releases_file)],
+    )
+    db.executemany(
+        "INSERT INTO downloads VALUES (?, ?)", sorted(Counter(first_seen.values()).items())
+    )
+    db.executemany(
+        "INSERT INTO build VALUES (?, ?)",
+        [
+            ("built_at", dt.datetime.now(dt.UTC).isoformat(timespec="seconds")),
+            ("git_commit", release.code_commit() or ""),
+        ],
     )
 
 

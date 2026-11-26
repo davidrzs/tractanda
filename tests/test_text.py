@@ -2,14 +2,15 @@ import base64
 import hashlib
 import json
 import os
+import re
 import sqlite3
-import struct
 import threading
 import time
 from contextlib import closing, contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pymupdf
+import pytest
 from typer.testing import CliRunner
 
 from opencommune import scope
@@ -34,18 +35,15 @@ def stored_pdf(raw, texts):
 
 
 def make_queue(tmp_path, pages, chunk_pages=2):
-    chosen = {
-        **ocr.reading_settings(),
-        "longest_edge": 200,
-        "created": "2026-11-14T16:00:00+00:00",
-    }
+    chosen = {**ocr.reading_settings(), "dpi": 36, "created": "2026-11-14T16:00:00+00:00"}
     items = [{"sha256": sha, "page": page} for sha, page in pages]
     return Queue.create(tmp_path / "queue", items, chunk_pages, chosen)
 
 
 @contextmanager
-def vllm(mode="ok"):
-    """A stand-in for vLLM's OpenAI API on loopback. Yields its URL and the request bodies."""
+def paddlex(mode="ok"):
+    """A stand-in for PaddleX's PaddleOCR-VL service on loopback. Yields its URL and, per request,
+    its body and the PDF sent. "reject-batches" refuses requests of more than one page."""
     seen = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -61,27 +59,35 @@ def vllm(mode="ok"):
             self.wfile.write(data)
 
         def do_GET(self):
-            self._send(200, {"data": [{"id": ocr.MODEL}]})
+            self._send(200, {"errorCode": 0, "errorMsg": "Healthy"})
 
         def do_POST(self):
-            seen.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-            if mode == "reject":
-                self._send(400, {"error": "too long"})
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            pdf = base64.b64decode(body.pop("file"))
+            seen.append((body, pdf))
+            pages = len(re.findall(rb"/Type\s*/Page(?!s)", pdf))  # no PyMuPDF off the main thread
+            if mode == "reject" or (mode == "reject-batches" and pages > 1):
+                self._send(422, {"errorCode": 422, "errorMsg": "Invalid input file"})
             elif mode == "fail":
-                self._send(500, {"error": "engine dead"})
+                self._send(500, {"errorCode": 500, "errorMsg": "engine dead"})
             else:
-                if mode == "slow":
+                if mode in ("slow", "hang"):
                     time.sleep(3)
-                answer = {"message": {"content": "Gemeinde"}, "finish_reason": "stop"}
-                self._send(
-                    200,
-                    {"choices": [answer], "usage": {"prompt_tokens": 9, "completion_tokens": 2}},
-                )
+                block = {"block_label": "text", "block_bbox": [1, 2, 3, 4], "block_content": "x"}
+                page = {
+                    "prunedResult": {
+                        "parsing_res_list": [block],
+                        "doc_preprocessor_res": {"angle": 90},
+                    },
+                    "markdown": {"text": "Gemeinde", "images": None},
+                }
+                result = {"layoutParsingResults": [page] * pages, "dataInfo": {}}
+                self._send(200, {"logId": "x", "errorCode": 0, "errorMsg": "", "result": result})
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        yield f"http://127.0.0.1:{server.server_port}/v1", seen
+        yield f"http://127.0.0.1:{server.server_port}", seen
     finally:
         server.shutdown()
 
@@ -186,24 +192,50 @@ def test_a_worker_answers_every_page_and_finishes_every_chunk(tmp_path):
     (raw / f"{'e' * 64}.pdf").write_bytes((raw / f"{b}.pdf").read_bytes())  # wrong name
     pages = [(a, 1), (a, 2), (a, 3), (b, 1), ("e" * 64, 1), ("f" * 64, 1)]
     queue = make_queue(tmp_path, pages)
-    with vllm() as (url, seen):
-        result = ocr.run(queue, raw, url, "one", 4, 2, None)
-        again = ocr.run(queue, raw, url, "two", 4, 2, None)
+    with paddlex() as (url, seen):
+        result = ocr.run(queue, raw, url, "one", 2, 64, 2, None)
+        again = ocr.run(queue, raw, url, "two", 2, 64, 2, None)
     assert result["stopped"] == "no chunk left"
     assert (result["ok"], result["render_error"], result["chunks_finished"]) == (4, 2, 3)
     assert all(queue.is_done(chunk) for chunk in queue.chunks())
-    assert again["stopped"] == "no chunk left" and "ok" not in again and len(seen) == 4
-    body = seen[0]
-    assert (body["model"], body["temperature"], body["top_p"]) == (ocr.MODEL, 0.2, 1.0)
-    assert body["chat_template_kwargs"] == {"enable_thinking": False} and "max_tokens" not in body
-    image, prompt = body["messages"][0]["content"]
-    assert prompt == {"type": "text", "text": "grounding"}
-    png = base64.b64decode(image["image_url"]["url"].removeprefix("data:image/png;base64,"))
-    assert max(struct.unpack(">II", png[16:24])) == 200
+    assert again["stopped"] == "no chunk left" and "ok" not in again
+    body = seen[0][0]
+    assert {key: body[key] for key in ocr.OPTIONS} == ocr.OPTIONS and body["fileType"] == 0
+    assert body["maxNewTokens"] == 8192 and body["markdownIgnoreLabels"] == []
+    sent = [pymupdf.open(stream=pdf, filetype="pdf") for _, pdf in seen]
+    assert sum(len(doc) for doc in sent) == 4
+    sheet = sent[0][0]
+    width, height = sheet.get_images()[0][2:4]
+    assert (width, height) == (298, 421)  # A4 at 36 dpi
+    assert (sheet.rect.width, sheet.rect.height) == (width / 2, height / 2)  # rendered at scale 2
+    answer = next(r for r in queue.answers("00000") if r["status"] == "ok")
+    assert (answer["text"], answer["angle"]) == ("Gemeinde", 90)
+    assert answer["blocks"] == [["text", [1, 2, 3, 4]]]
     errors = {r["sha256"]: r["error"] for r in queue.answers("00002")}
     assert errors == {"e" * 64: "the file's SHA-256 is not its name", "f" * 64: "no such file"}
     assert queue.status()["pages"] == {"total": 6, "answered": 6, "ok": 4, "render_error": 2}
     assert json.loads((queue.root / "workers" / "one" / "worker.json").read_text())["ok"] == 4
+
+
+def test_pages_are_rendered_at_most_at_max_pixels(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    sha = stored_pdf(raw, ["x"])
+    page = ocr.render(str(raw / f"{sha}.pdf"), sha, 1, 144, 10_000)
+    assert page["width"] * page["height"] < 11_000  # a pixel more on each edge at most
+    assert page["png"].startswith(b"\x89PNG")
+
+
+def test_a_refused_request_is_sent_again_page_by_page(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    sha = stored_pdf(raw, ["", "", ""])
+    queue = make_queue(tmp_path, [(sha, 1), (sha, 2), (sha, 3)], chunk_pages=3)
+    with paddlex("reject-batches") as (url, seen):
+        result = ocr.run(queue, raw, url, "one", 1, 64, 1, None)
+    assert (result["stopped"], result["ok"]) == ("no chunk left", 3)
+    assert [len(re.findall(rb"/Type\s*/Page(?!s)", pdf)) for _, pdf in seen] == [3, 1, 1, 1]
+    assert {r["request_pages"] for r in queue.answers("00000")} == {1}
 
 
 def test_rejected_pages_are_answered_and_a_failing_server_stops_the_worker(tmp_path, monkeypatch):
@@ -213,12 +245,12 @@ def test_rejected_pages_are_answered_and_a_failing_server_stops_the_worker(tmp_p
     raw.mkdir()
     sha = stored_pdf(raw, ["", "", ""])
     queue = make_queue(tmp_path, [(sha, 1), (sha, 2), (sha, 3)], chunk_pages=3)
-    with vllm("fail") as (url, seen):
-        failed = ocr.run(queue, raw, url, "one", 1, 1, None)
-    assert failed["stopped"] == ocr.SERVER_FAILED and len(seen) == 6
+    with paddlex("fail") as (url, seen):
+        failed = ocr.run(queue, raw, url, "one", 1, 64, 1, None)
+    assert failed["stopped"] == ocr.SERVER_FAILED and len(seen) >= 3
     assert not queue.is_done("00000") and not list((queue.root / "claims").iterdir())
-    with vllm("reject") as (url, _):
-        rejected = ocr.run(queue, raw, url, "two", 2, 1, None)
+    with paddlex("reject") as (url, _):
+        rejected = ocr.run(queue, raw, url, "two", 1, 64, 1, None)
     assert (rejected["stopped"], rejected["rejected"]) == ("no chunk left", 3)
     assert queue.is_done("00000")
 
@@ -228,10 +260,28 @@ def test_a_worker_stops_at_its_time_and_releases_its_chunks(tmp_path):
     raw.mkdir()
     sha = stored_pdf(raw, ["", ""])
     queue = make_queue(tmp_path, [(sha, 1), (sha, 2)])
-    with vllm("slow") as (url, _):
-        result = ocr.run(queue, raw, url, "one", 2, 1, time.time() + 1)
+    with paddlex("slow") as (url, _):
+        result = ocr.run(queue, raw, url, "one", 2, 64, 1, time.time() + 1)
     assert result["stopped"] == "time is up" and "ok" not in result
     assert not queue.is_done("00000") and not list((queue.root / "claims").iterdir())
+
+
+def test_a_service_that_does_not_answer_stops_the_worker_at_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(ocr, "REQUEST_TIMEOUT", 1)
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    sha = stored_pdf(raw, ["", ""])
+    queue = make_queue(tmp_path, [(sha, 1), (sha, 2)])
+    with paddlex("hang") as (url, seen):
+        result = ocr.run(queue, raw, url, "one", 1, 64, 1, None)
+    assert result["stopped"] == ocr.SERVER_FAILED and len(seen) == 1
+    assert not queue.is_done("00000") and not list((queue.root / "claims").iterdir())
+
+
+def test_a_worker_refuses_a_queue_read_with_another_model(tmp_path):
+    queue = Queue.create(tmp_path / "queue", [], 1, {"model": "another"})
+    with pytest.raises(RuntimeError, match="another"):
+        ocr.run(queue, tmp_path, "http://127.0.0.1:9", "one", 1, 1, 1, None)
 
 
 def test_the_text_commands_name_their_passes_and_queues(tmp_path, monkeypatch):
@@ -261,7 +311,7 @@ def test_the_text_commands_name_their_passes_and_queues(tmp_path, monkeypatch):
     assert queue.pages("00000") == [(sha, 1), (sha, 3)]
     assert queue.settings["scope"] == list(scope.TYPES)
     assert (queue.settings["pages_in_scope"], queue.settings["pages"]) == (3, 2)
-    assert queue.settings["revision"] == ocr.REVISION
+    assert (queue.settings["model"], queue.settings["dpi"]) == (ocr.MODEL, 144)
     assert run("queue", "q").exit_code != 0
     shown = run("status", "q")
     assert json.loads(shown.stdout)["pages"] == {"total": 2, "answered": 0}

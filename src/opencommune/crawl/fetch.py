@@ -18,6 +18,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from html import escape
 from urllib.parse import urljoin
 
 import httpx
@@ -39,6 +40,9 @@ log = logging.getLogger(__name__)
 # A backfill pass follows up to this many pages per hop instead of each step's max_follow, to
 # reach documents older than the weekly pass looks at (David, 2026-11-13). More is logged.
 BACKFILL_FOLLOW = 1000
+# A page of a hop can be the file itself: an i-web publication with a single attachment redirects
+# to it.
+PDF_TYPES = frozenset({"application/pdf", "application/x-pdf"})
 
 
 @dataclass(frozen=True)
@@ -315,7 +319,13 @@ def _links_for_hop(
     url = page_url
     seen = {url}
     for _ in range(step.max_follow or cfg.max_follow):
-        text, headers = _get_page(url, client, polite, adapter, step)
+        try:
+            text, headers = _get_page(url, client, polite, adapter, step)
+        except _FileAnswer as answer:
+            links.extend(_file_links(answer.chain, url, adapter, step, cfg, parent))
+            if extra_step is not None and extra_out is not None:
+                extra_out.extend(_file_links(answer.chain, url, adapter, extra_step, cfg, parent))
+            break
         try:
             links.extend(
                 adapter.extract_links(
@@ -344,6 +354,35 @@ def _links_for_hop(
             step.max_follow or cfg.max_follow,
         )
     return links
+
+
+class _FileAnswer(http.FetchFailure):
+    """A page that answered with a PDF. Its body is left unread, for the download; where a page is
+    not read for its links (a form), it is a failure of kind not_html."""
+
+    def __init__(self, url: str, response: httpx.Response) -> None:
+        super().__init__("not_html", url, "the page is a PDF")
+        self.chain = [*(str(r.url) for r in response.history), str(response.url)]
+
+
+def _file_links(chain, url, adapter, step, cfg, parent: Link | None) -> list[Link]:
+    """A page that answered with a PDF, read as a page that links the file under the text of the
+    link that led to it, so that the step's own selection decides. The file goes by the first URL of
+    the redirect chain that the step selects (on i-web the /_doc/<id> hop, not the publication page
+    nor the named file it ends at), the URL a page linking the file directly would give."""
+    text = escape(parent.text if parent else "")
+    for hop in chain:
+        anchor = f'<a href="{escape(hop)}">{text}</a>'
+        try:
+            found = adapter.extract_links(
+                anchor, url, step, cfg.date_regex, cfg.date_order, parent=parent
+            )
+        except Exception as exc:  # as for a malformed page: any exception is a parse failure
+            raise http.FetchFailure("parse", url, http._describe(exc)) from exc
+        if found:
+            return found[:1]
+    log.info("%s is a PDF that the step does not select", url)
+    return []
 
 
 def form_submissions(
@@ -446,11 +485,21 @@ def _get_page(
     step: AdapterStep | None = None,
 ) -> tuple[str, httpx.Headers]:
     """One listing page as text, with the response headers. Raises FetchFailure: robots, http or
-    timeout."""
+    timeout, and _FileAnswer for a PDF, whose body is not read."""
     if not polite.allowed(url):
         raise http.FetchFailure("robots", url, "disallowed by robots.txt")
-    r = http._send(client, polite, _build_request(adapter, step, url, client))
+    r = http._send(client, polite, _build_request(adapter, step, url, client), stream=True)
     http._ensure_ok(r, url)
+    try:
+        if r.headers.get("content-type", "").split(";")[0].strip().lower() in PDF_TYPES:
+            raise _FileAnswer(url, r)
+        r.read()
+    except httpx.TimeoutException as exc:
+        raise http.FetchFailure("timeout", url, http._describe(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise http.FetchFailure("http", url, http._describe(exc)) from exc
+    finally:
+        r.close()
     return r.text, r.headers
 
 

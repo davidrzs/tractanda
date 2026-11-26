@@ -54,6 +54,7 @@ DATABASE_PATH=data/opencommune.db STATIC_DIR=frontend/build server/target/releas
 | `GET /api/pages` | full-text search, MCP `search_text` |
 | `GET /api/documents/{sha256}/pages` | the text of pages, MCP `read_pages` |
 | `GET /api/runs` | the runs behind the classification |
+| `GET /api/releases` | the about page's versions of the data |
 | `GET /api/openapi.json` | the OpenAPI 3.1 description of this API, for tools and the website's API page |
 | `GET /api/register` | API users |
 | `GET /original/{sha256}` | links in document lists |
@@ -283,6 +284,15 @@ router is missing from it or its fields differ from what the API sends.
 Every run, by id: `id, stage, model, settings, note, documents`. `settings` is the stored JSON
 object (null if it does not parse); `note` says in plain sentences what the settings do to the data.
 
+### `GET /api/releases`
+
+`current, releases, downloads`. `releases` is every released version of the data, oldest first:
+`version, date, documents, pages, communes, searchable_pages, ocr_pages, classification_run,
+git_commit, note` (the rows of the ledger `data/releases.csv` the serving database was built with,
+then the one the full-text index was released as). `current` is the version of the files the
+server reads, null when they were not released or there is no full-text index. `downloads` is
+`[{day, files}]`: the files first downloaded each day, also those not classified yet.
+
 ### `GET /api/register`
 
 Every register row, by canton and BFS id: `bfs_id, name, canton, status, website, vendor,
@@ -400,7 +410,8 @@ visitor receives the same HTML.
 
 1. `/{lang}` (`de`, `fr`, `it`, `en`): the number of documents and of the communes that link them
    (with the note that no person has checked the classification), the cantons and the communes
-   with documents (JSON-LD `Dataset`, listed in the Hugging Face catalogue). `/` redirects to the
+   with documents (JSON-LD `Dataset`, listed in the Hugging Face catalogue, with the current
+   version and its date as `version` and `dateModified`). `/` redirects to the
    browser's language, else `/de`.
 2. `/{lang}/gemeinden/{bfs_id}`: the commune's number of documents, website, documents per year
    and the first page of `/api/documents?commune=<bfs_id>` (the twenty newest documents, title and
@@ -427,14 +438,16 @@ visitor receives the same HTML.
 ## Tables and indexes
 
 The server reads the tables of `src/opencommune/serving.sql`: `communes`, `runs`, `documents`,
-`documents_fts`, `document_communes`, `sections`, `register`, `register_publications` and
-`access_observations`. `opencommune build` writes them from scratch; the integration tests create
+`documents_fts`, `document_communes`, `sections`, `register`, `register_publications`,
+`access_observations`, `releases` and `downloads` (and `build`, which it does not read).
+`opencommune build` writes them from scratch; the integration tests create
 their database from the same file. The build leaves the database out of WAL mode, so the read-only
 server needs no `-shm` file. The server does not start without these tables.
 
 The full-text index is a second file, `fulltext.db`, which `opencommune build-fulltext` writes
 (`src/opencommune/fulltext.py`): `pages (id, sha256, page, source, run)`, `page_fts` (FTS5,
-`unicode61 remove_diacritics 2`, the text stored redacted, rowid = `pages.id`) and `build`. The
+`unicode61 remove_diacritics 2`, the text stored redacted, rowid = `pages.id`) and `build`, whose
+`release` row, once `opencommune release` has run, is the version's row of the ledger (JSON). The
 redaction marks, such as `［name］`, are written in full-width brackets, which the tokenizer keeps
 inside a word, so a search for "Name" does not find them. Every
 connection attaches it as the schema `fulltext`. The serving database is opened read-only, and an

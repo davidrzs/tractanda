@@ -132,3 +132,29 @@ CREATE TABLE IF NOT EXISTS access_observations (
 );
 CREATE INDEX IF NOT EXISTS access_observations_commune
     ON access_observations (bfs_id, checked_at DESC);
+
+-- The released versions of the data, oldest first: the ledger data/releases.csv as it stood when
+-- this file was built. The version this file belongs to is released after it is built, so its row
+-- is not here; the full-text index carries it (`opencommune release`, release.py).
+CREATE TABLE IF NOT EXISTS releases (
+    version TEXT PRIMARY KEY,       -- 2026.11.26; 2026.11.26.2 for a second release that day
+    date TEXT NOT NULL,             -- ISO date of the release
+    documents INTEGER NOT NULL,     -- documents listed
+    pages INTEGER NOT NULL,         -- their pages
+    communes INTEGER NOT NULL,      -- communes with at least one listed document
+    searchable_pages INTEGER NOT NULL, -- pages in the full-text index
+    ocr_pages INTEGER NOT NULL,     -- of those, pages whose text came from OCR
+    classification_run TEXT NOT NULL,
+    git_commit TEXT,                -- the code that built the version; "-dirty" when tracked files differed
+    note TEXT                       -- for the maintainers, in English; the site does not show it
+);
+
+-- Files first downloaded each day, from the URL index: every file, also those not classified yet.
+CREATE TABLE IF NOT EXISTS downloads (
+    day TEXT PRIMARY KEY,           -- ISO date, UTC
+    files INTEGER NOT NULL
+) WITHOUT ROWID;
+
+-- How this file was built: built_at (ISO timestamp, UTC) and git_commit (as in releases; empty
+-- outside a git checkout).
+CREATE TABLE IF NOT EXISTS build (key TEXT PRIMARY KEY, value TEXT NOT NULL);

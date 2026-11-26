@@ -1,7 +1,7 @@
 import json
 import sqlite3
 
-from opencommune import build
+from opencommune import build, release
 from opencommune.classify.store import Store
 from opencommune.config import settings
 from opencommune.crawl import access
@@ -112,6 +112,9 @@ def test_build_writes_the_serving_database_from_scratch(tmp_path, monkeypatch):
     access.record("https://alpha.example/files/private-name.pdf", "rate_limited")
     access.record("https://shared.example/beta/files", "restricted")
     serving = tmp_path / "serving.db"
+    baseline = release.Release("2026.01.02", "2026-01-02", 1, 9, 1, 9, 0, "cls", None, None)
+    release._append(settings.releases_file, baseline)
+    monkeypatch.setattr(release, "code_commit", lambda: "abc")
 
     counts = build.run(serving, main, process)
     assert counts == {
@@ -123,6 +126,8 @@ def test_build_writes_the_serving_database_from_scratch(tmp_path, monkeypatch):
         "register": 3,
         "register_publications": 1,
         "access_observations": 1,
+        "releases": 1,
+        "downloads": 2,
     }
     assert build.run(serving, main, process) == counts  # a rebuild replaces, never appends
     assert not (tmp_path / "serving.db.tmp").exists()
@@ -200,6 +205,16 @@ def test_build_writes_the_serving_database_from_scratch(tmp_path, monkeypatch):
         "SELECT bfs_id, source_url, status, restricted_at IS NOT NULL FROM access_observations"
     ).fetchone()
     assert row == (1, "https://alpha.example/", "rate_limited", 1)
+    # the ledger as it stands, every file by the day of its first download, and the code
+    assert db.execute("SELECT * FROM releases").fetchall() == [
+        ("2026.01.02", "2026-01-02", 1, 9, 1, 9, 0, "cls", None, None)
+    ]
+    assert db.execute("SELECT * FROM downloads").fetchall() == [
+        ("2026-01-01", 4),
+        ("2026-01-05", 1),
+    ]
+    built = dict(db.execute("SELECT key, value FROM build"))
+    assert built["git_commit"] == "abc" and built["built_at"].startswith("20")
     db.close()
 
 

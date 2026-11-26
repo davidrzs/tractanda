@@ -32,6 +32,22 @@ export const about = {
     dataset: 'Datensatz auf Hugging Face',
     paper: 'Arbeitspapier, ein erster Entwurf (PDF)',
     llms: 'Kurzbeschreibung für KI-Agenten (llms.txt)',
+    versionsTitle: 'Versionen',
+    versions:
+      'Die Daten wachsen mit jeder Version. Eine Version ist ein fester Stand, wie ihn die Website zeigt; wer die Daten zitiert, nennt die Version. Die Fläche zeigt alle Dateien, die der Crawler bisher heruntergeladen hat, auch solche, die noch nicht eingeordnet und deshalb noch nicht im Archiv sind.',
+    current: 'Aktuelle Version',
+    downloaded: 'Heruntergeladene Dateien',
+    listed: 'Dokumente im Archiv',
+    counts: {
+      documents: 'Dokumente',
+      pages: 'Seiten',
+      communes: 'Gemeinden',
+      searchable_pages: 'im Volltext durchsuchbare Seiten',
+      ocr_pages: 'Seiten aus Texterkennung (OCR)'
+    },
+    first: 'Erste erfasste Version.',
+    unchanged: 'Die Zahlen sind unverändert.',
+    chartLabel: 'Heruntergeladene Dateien und Dokumente im Archiv, {from} bis {to}',
     privacyTitle: 'Datenschutz',
     privacy:
       'Die Website setzt keine Cookies und lädt nichts von Dritten nach. Für die Nutzungsstatistik zählt der Server Aufrufe pro Tag und Seitentyp, bei Links von anderen Websites nur deren Domain; IP-Adressen, Suchbegriffe und vollständige Adressen der aufgerufenen Seiten speichert er nicht. Was ins Suchfeld eingegeben wird, protokolliert er für die Antwort über den Suchergebnissen 90 Tage, ohne IP-Adresse. Die Zahl der Besuchenden pro Tag wird mit einem täglich wechselnden Schlüssel geschätzt, sodass niemand über Tage hinweg wiedererkannt werden kann. Wer «Do Not Track» oder «Global Privacy Control» sendet, fliesst weder in diese Schätzung noch in die Zählung der Domains ein. Die Zählungen pro Tag werden dauerhaft aufbewahrt; sie enthalten keine Angaben zu Personen.'
@@ -69,6 +85,22 @@ export const about = {
     dataset: 'Jeu de données sur Hugging Face',
     paper: 'Document de travail, premier projet (PDF)',
     llms: 'Description courte pour les agents IA (llms.txt)',
+    versionsTitle: 'Versions',
+    versions:
+      'Les données s’enrichissent à chaque version. Une version est un état fixe, tel que le site le présente ; pour citer les données, indiquez la version. La surface montre tous les fichiers téléchargés jusqu’ici par le robot, y compris ceux qui ne sont pas encore classés et ne figurent donc pas encore dans les archives.',
+    current: 'Version actuelle',
+    downloaded: 'Fichiers téléchargés',
+    listed: 'Documents dans les archives',
+    counts: {
+      documents: 'documents',
+      pages: 'pages',
+      communes: 'communes',
+      searchable_pages: 'pages consultables en texte intégral',
+      ocr_pages: 'pages issues de la reconnaissance de texte (OCR)'
+    },
+    first: 'Première version enregistrée.',
+    unchanged: 'Les chiffres sont inchangés.',
+    chartLabel: 'Fichiers téléchargés et documents dans les archives, du {from} au {to}',
     privacyTitle: 'Protection des données',
     privacy:
       'Le site n’utilise pas de cookies et ne charge rien de tiers. Pour les statistiques d’utilisation, le serveur compte les accès par jour et par type de page, et pour les liens venant d’autres sites seulement leur domaine ; il n’enregistre ni adresses IP, ni termes de recherche, ni adresses complètes des pages consultées. Ce qui est saisi dans le champ de recherche est journalisé 90 jours pour la réponse au-dessus des résultats, sans adresse IP. Le nombre de visiteurs par jour est estimé à l’aide d’une clé qui change chaque jour, de sorte que personne ne peut être reconnu d’un jour à l’autre. Les navigateurs qui envoient « Do Not Track » ou « Global Privacy Control » ne sont pris en compte ni dans cette estimation ni dans le décompte des domaines. Les décomptes par jour sont conservés sans limite de durée ; ils ne contiennent aucune donnée personnelle.'
@@ -106,6 +138,22 @@ export const about = {
     dataset: 'Dataset su Hugging Face',
     paper: 'Documento di lavoro, prima bozza (PDF)',
     llms: 'Descrizione breve per agenti IA (llms.txt)',
+    versionsTitle: 'Versioni',
+    versions:
+      'I dati crescono a ogni versione. Una versione è uno stato fisso, come lo mostra il sito; chi cita i dati indica la versione. L’area mostra tutti i file scaricati finora dal crawler, anche quelli non ancora classificati e quindi non ancora presenti nell’archivio.',
+    current: 'Versione attuale',
+    downloaded: 'File scaricati',
+    listed: 'Documenti nell’archivio',
+    counts: {
+      documents: 'documenti',
+      pages: 'pagine',
+      communes: 'comuni',
+      searchable_pages: 'pagine consultabili nel testo integrale',
+      ocr_pages: 'pagine dal riconoscimento del testo (OCR)'
+    },
+    first: 'Prima versione registrata.',
+    unchanged: 'I conteggi sono invariati.',
+    chartLabel: 'File scaricati e documenti nell’archivio, dal {from} al {to}',
     privacyTitle: 'Protezione dei dati',
     privacy:
       'Il sito non usa cookie e non carica nulla da terzi. Per le statistiche d’uso il server conta gli accessi per giorno e per tipo di pagina e, per i link da altri siti, solo il loro dominio; non registra né indirizzi IP, né termini di ricerca, né gli indirizzi completi delle pagine visitate. Ciò che viene inserito nel campo di ricerca è registrato per 90 giorni per la risposta sopra i risultati, senza indirizzo IP. Il numero di visitatori al giorno è stimato con una chiave che cambia ogni giorno, così nessuno può essere riconosciuto da un giorno all’altro. Chi invia «Do Not Track» o «Global Privacy Control» non viene considerato né in questa stima né nel conteggio dei domini. I conteggi giornalieri vengono conservati senza limiti di tempo e non contengono dati personali.'
@@ -143,6 +191,22 @@ export const about = {
     dataset: 'Dataset on Hugging Face',
     paper: 'Working paper, a first draft (PDF)',
     llms: 'Short description for AI agents (llms.txt)',
+    versionsTitle: 'Versions',
+    versions:
+      'The data grows with each version. A version is a fixed state, as the website shows it; when citing the data, name the version. The shaded area shows every file the crawler has downloaded so far, including those not yet classified and therefore not yet in the archive.',
+    current: 'Current version',
+    downloaded: 'Files downloaded',
+    listed: 'Documents in the archive',
+    counts: {
+      documents: 'documents',
+      pages: 'pages',
+      communes: 'municipalities',
+      searchable_pages: 'pages searchable in full text',
+      ocr_pages: 'pages from text recognition (OCR)'
+    },
+    first: 'First recorded version.',
+    unchanged: 'The counts are unchanged.',
+    chartLabel: 'Files downloaded and documents in the archive, {from} to {to}',
     privacyTitle: 'Privacy',
     privacy:
       'The website sets no cookies and loads nothing from third parties. For the usage statistics, the server counts requests per day and page type, and for links from other websites only their domain; it does not store IP addresses, search terms or the full addresses of the pages requested. What is typed into the search field is logged for 90 days for the answer above the search results, without the IP address. The number of visitors per day is estimated with a key that changes daily, so that no one can be recognised from one day to the next. Anyone who sends “Do Not Track” or “Global Privacy Control” is included neither in this estimate nor in the count of domains. The counts per day are kept permanently; they contain no information about persons.'

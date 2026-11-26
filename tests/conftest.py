@@ -13,10 +13,13 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_TMP}/test.db"
 # a local .env may set a disk reserve larger than the test filesystem has free
 os.environ["RAW_MIN_FREE_BYTES"] = str(1024**3)
 
-# A host .env may keep configuration apart from state (CONFIG_DIR); tests keep both in DATA_DIR.
+# A host .env may keep configuration apart from state (CONFIG_DIR), raw files (RAW_DATA_DIR) and
+# rendered requests (SCRATCH_DIR) elsewhere; tests keep all of them in DATA_DIR.
 from opencommune.config import settings  # noqa: E402
 
 settings.config_dir = None
+settings.raw_data_dir = None
+settings.scratch_dir = None
 
 
 # --- network guard ----------------------------------------------------------------------------

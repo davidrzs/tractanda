@@ -201,3 +201,22 @@ export type Run = {
   note: string;
   documents: number;
 };
+// one released version of the data, from /api/releases
+export type Release = {
+  version: string;
+  date: string;
+  documents: number;
+  pages: number;
+  communes: number;
+  searchable_pages: number;
+  ocr_pages: number;
+  classification_run: string;
+  git_commit: string | null;
+  note: string | null;
+};
+// /api/releases: `current` is the version the site serves, null when it serves unreleased files
+export type Releases = {
+  current: string | null;
+  releases: Release[];
+  downloads: { day: string; files: number }[];
+};

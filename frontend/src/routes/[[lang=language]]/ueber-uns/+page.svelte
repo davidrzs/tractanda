@@ -4,6 +4,7 @@
   import { licensesPage } from '$lib/copy/pages';
   import { documentCount, href, type Lang } from '$lib/i18n';
   import { privacy } from '$lib/privacy';
+  import Releases from '$lib/Releases.svelte';
   import ReportProblem from '$lib/ReportProblem.svelte';
   import {
     codeClass,
@@ -104,6 +105,14 @@
         </li>
       </ul>
     </section>
+
+    {#if data.releases?.releases.length}
+      <section id="versionen" class={cn(sectionClass, 'scroll-mt-6')}>
+        <h2 class={h2Class}>{t.versionsTitle}</h2>
+        <p class={pClass}>{t.versions}</p>
+        <Releases data={data.releases} {lang} />
+      </section>
+    {/if}
 
     <section class={sectionClass}>
       <h2 class={h2Class}>{t.privacyTitle}</h2>

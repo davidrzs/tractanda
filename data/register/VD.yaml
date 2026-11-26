@@ -4927,6 +4927,17 @@
     kind: minutes
     status: configured
     listing_url: https://www.montreux.ch/autorites-et-services-communaux/conseilcommunal
+  - body: parliament
+    kind: documents
+    status: configured
+    listing_url: https://www.conseilmontreux.ch/conseilcommunal/public/ordredujour/
+    from: '2006'
+    to: '2026'
+    how: 'html_links, 2 hops on the council''s own site (Quicksite): session pages, then the attachments whose file
+      name names a budget, accounts or the management report (budget, comptes, rapport de gestion, CoGest). Two
+      sources: the current year''s sessions (linked without a year) and the archive tables from 2006; dry run: 13
+      documents from the 2026 sessions (accounts 2025, budgets 2027 of the commune and its intercommunal bodies) and
+      7 from the two newest archived sessions (budget 2026); 178 older sessions are left to a backfill'
 - bfs_id: 5889
   name: La Tour-de-Peilz
   canton: VD

@@ -246,6 +246,23 @@ def test_dates_of_birth_the_names_before_them_and_mobile_numbers_are_found_by_th
     assert redact.redact(text, []) == (redacted, marks)
 
 
+def test_names_listed_with_a_year_of_birth_are_found_by_their_form():
+    name = redact.MARKS["private_person"]
+    text = (
+        "L'attinenza comunale di Vacallo al signor Bruno Rossi Dias, 2003, celibe, di "
+        "nazionalita portoghese; alla signora Anna Verdi, 1951, coniugata; Caterina Bianchi nata "
+        "Neri, 1961, coniugata; al signor Marco Gialli, 1979, alle condizioni.\n"
+        "Comune di Vacallo, 2020, preventivo; Egregio signor Presidente, 12 membri."
+    )
+    redacted = (
+        f"L'attinenza comunale di Vacallo al signor {name}, 2003, celibe, di "
+        f"nazionalita portoghese; alla signora {name}, 1951, coniugata; {name}, 1961, coniugata; "
+        f"al signor {name}, 1979, alle condizioni.\n"
+        "Comune di Vacallo, 2020, preventivo; Egregio signor Presidente, 12 membri."
+    )
+    assert redact.redact(text, []) == (redacted, {"private_person": 4})
+
+
 def test_places_titles_and_ordinary_words_are_not_taken_for_names_elsewhere():
     name, address = redact.MARKS["private_person"], redact.MARKS["private_address"]
     first = "Mme Anne Page, Bahnhofstrasse 5, 3018 Bern, Luzern; Wald Forst-Zillis."

@@ -198,6 +198,7 @@ impl Archive {
                 search_total,
                 visitor: None,
                 referrer: None,
+                commune: None,
             });
         }
     }

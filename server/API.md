@@ -316,7 +316,10 @@ nothing else, as rows by day:
    link elsewhere, from browsers only.
 4. `bots`: `day, name, requests`: requests from recognised automated clients, by crawler name
    (`other` when unknown, `none` without a user agent).
-5. `ask`, when the chatbot is configured: `day, outcome, questions, usd`: questions per outcome
+5. `communes`: `day, bfs_id, requests`: requests of the front end for a commune
+   (`/api/communes/{bfs_id}`), from browsers only: each time a commune page opens or its filters
+   change.
+6. `ask`, when the chatbot is configured: `day, outcome, questions, usd`: questions per outcome
    (`answered`, `too_broad`, `used_up`, `budget`, `busy`, `timeout`, `cancelled`, `empty`,
    `no_credit`, `failed`, `cached` for those answered again from what was kept, and `refused:<reason>` for those
    turned away before the model, as `POST /api/ask` names the reasons) and the dollars they cost.

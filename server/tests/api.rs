@@ -864,6 +864,50 @@ async fn usage_counts_crawlers_linking_domains_and_browsers_that_run_the_front_e
 }
 
 #[tokio::test]
+async fn usage_counts_the_communes_whose_pages_browsers_open() {
+    let f = fixture(true).await;
+    let firefox = "Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0";
+    let google = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
+    let peer: SocketAddr = "127.0.0.1:40000".parse().unwrap();
+    for (uri, agent, dnt) in [
+        // the front end asks for the commune when its page opens and when a filter changes
+        ("/api/communes/261", firefox, false),
+        ("/api/communes/261", firefox, false),
+        // an opted-out browser, a crawler, an unknown commune and the page itself are not counted
+        ("/api/communes/5938", firefox, true),
+        ("/api/communes/261", google, false),
+        ("/api/communes/999", firefox, false),
+        ("/de/gemeinden/4001", firefox, false),
+    ] {
+        let mut request = Request::get(uri)
+            .header(header::USER_AGENT, agent)
+            .header("x-forwarded-for", "203.0.113.7");
+        if dnt {
+            request = request.header("dnt", "1");
+        }
+        let mut request = request.body(Body::empty()).unwrap();
+        request.extensions_mut().insert(ConnectInfo(peer));
+        send(&f.router, request).await;
+    }
+    usage_rows(&f.usage_path, 6).await;
+    let communes = usage_counts(
+        &f.usage_path,
+        "SELECT CAST(bfs_id AS TEXT), requests FROM communes",
+        2,
+    )
+    .await;
+    assert_eq!(communes, [("261".to_string(), 2)]);
+    let request = Request::get("/api/usage?days=1")
+        .header(header::AUTHORIZATION, format!("Bearer {USAGE_TOKEN}"))
+        .body(Body::empty())
+        .unwrap();
+    let (_, _, body) = send(&f.router, request).await;
+    let report: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(report["communes"][0]["bfs_id"], 261);
+    assert_eq!(report["communes"][0]["requests"], 2);
+}
+
+#[tokio::test]
 async fn the_usage_report_needs_its_token_and_is_not_counted() {
     let off = fixture(false).await;
     let (status, _) = get(&off.router, "/api/usage").await;
@@ -888,7 +932,10 @@ async fn the_usage_report_needs_its_token_and_is_not_counted() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(headers[header::CACHE_CONTROL], "no-store");
     let report: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(keys(&report), ["totals", "visitors", "referrers", "bots"]);
+    assert_eq!(
+        keys(&report),
+        ["totals", "visitors", "referrers", "bots", "communes"]
+    );
     let totals = report["totals"].as_array().unwrap();
     assert_eq!(totals.len(), 1);
     assert_eq!(totals[0]["route"], "/api/runs");

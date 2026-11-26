@@ -1,7 +1,7 @@
 //! In-house usage statistics in a separate SQLite file: daily aggregates per channel, route
 //! template, bot flag and status, kept for good, with the names of recognised crawlers and the
-//! domains of the sites that link to a page. No raw paths, query strings, search terms, headers
-//! or IP addresses are stored. The daily visitor estimates keep an HMAC of address and browser
+//! domains of the sites that link to a page, and which communes' pages browsers open. No raw
+//! paths, query strings, search terms, headers or IP addresses are stored. The daily visitor estimates keep an HMAC of address and browser
 //! under a key that is replaced every day; once the day is over its key and its HMACs are deleted
 //! and only their number stays. There are two estimates: clients that load a page, and browsers
 //! that also run the front end (it asks for `/api/communes` on every page load), which tells
@@ -47,16 +47,24 @@ CREATE TABLE IF NOT EXISTS referrers (
 CREATE TABLE IF NOT EXISTS bots (
     day TEXT, name TEXT, requests INTEGER NOT NULL, PRIMARY KEY (day, name)
 );
+CREATE TABLE IF NOT EXISTS communes (
+    day TEXT, bfs_id INTEGER, requests INTEGER NOT NULL, PRIMARY KEY (day, bfs_id)
+);
 ";
 
 const REFERRERS: &str = "SELECT day, host, requests FROM referrers WHERE day >= date('now', ?) \
                          ORDER BY day, requests DESC, host";
 const BOTS: &str = "SELECT day, name, requests FROM bots WHERE day >= date('now', ?) \
                     ORDER BY day, requests DESC, name";
+const COMMUNES: &str = "SELECT day, bfs_id, requests FROM communes WHERE day >= date('now', ?) \
+                        ORDER BY day, requests DESC, bfs_id";
 
 /// The route whose requests count browsers that run the front end: its layout asks for it on
 /// every page load.
 const FRONT_END_ROUTE: &str = "/api/communes";
+
+/// The route the front end asks for on a commune page: the page opened, or its filters changed.
+const COMMUNE_ROUTE: &str = "/api/communes/{bfs_id}";
 
 /// A row of `totals`: day, channel, route, bot, status, requests, searches, empty searches and
 /// the summed duration in milliseconds.
@@ -79,6 +87,8 @@ pub struct Hit {
     pub visitor: Option<(String, String)>,
     /// The domain of the linking site, for a page opened from a link elsewhere.
     pub referrer: Option<String>,
+    /// The commune whose page a browser opened (`COMMUNE_ROUTE`).
+    pub commune: Option<i64>,
 }
 
 #[derive(Clone)]
@@ -129,7 +139,8 @@ impl Usage {
     }
 
     /// The counts of the last `days` days, today included: the rows of `totals`, the visitor
-    /// estimates (today's so far), the linking domains and the crawlers.
+    /// estimates (today's so far), the linking domains, the crawlers and the communes whose pages
+    /// browsers opened.
     pub async fn report(&self, days: i64) -> sqlx::Result<Value> {
         let since = format!("-{} days", days - 1);
         let totals: Vec<TotalsRow> = sqlx::query_as(
@@ -153,6 +164,10 @@ impl Usage {
         .await?;
         let referrers = self.daily_counts(REFERRERS, &since).await?;
         let bots = self.daily_counts(BOTS, &since).await?;
+        let communes: Vec<(String, i64, i64)> = sqlx::query_as(COMMUNES)
+            .bind(&since)
+            .fetch_all(&self.pool)
+            .await?;
         Ok(json!({
             "totals": totals.into_iter().map(|r| json!({
                 "day": r.0, "channel": r.1, "route": r.2, "bot": r.3 != 0, "status": r.4,
@@ -166,6 +181,9 @@ impl Usage {
             })).collect::<Vec<_>>(),
             "bots": bots.into_iter().map(|r| json!({
                 "day": r.0, "name": r.1, "requests": r.2,
+            })).collect::<Vec<_>>(),
+            "communes": communes.into_iter().map(|r| json!({
+                "day": r.0, "bfs_id": r.1, "requests": r.2,
             })).collect::<Vec<_>>(),
         }))
     }
@@ -238,6 +256,16 @@ async fn write(pool: &SqlitePool, hit: Hit) -> sqlx::Result<()> {
              ON CONFLICT (day, host) DO UPDATE SET requests = requests + 1",
         )
         .bind(host)
+        .execute(&mut *tx)
+        .await?;
+    }
+    // an unknown commune answers 404, so only the register's communes are counted
+    if let Some(bfs_id) = hit.commune.filter(|_| person) {
+        sqlx::query(
+            "INSERT INTO communes VALUES (date('now'), ?, 1) \
+             ON CONFLICT (day, bfs_id) DO UPDATE SET requests = requests + 1",
+        )
+        .bind(bfs_id)
         .execute(&mut *tx)
         .await?;
     }
@@ -466,6 +494,16 @@ pub async fn count(State(state): State<AppState>, request: Request, next: Next) 
         .then(|| referrer_host(header("referer")))
         .flatten()
         .filter(|host| !state.site.is_own_host(host));
+    let commune = (person && channel == "api" && route == COMMUNE_ROUTE)
+        .then(|| {
+            request
+                .uri()
+                .path()
+                .strip_prefix("/api/communes/")?
+                .parse()
+                .ok()
+        })
+        .flatten();
     let estimated = channel == "web" || (channel == "api" && route == FRONT_END_ROUTE);
     let visitor = if usage.visitors && estimated && person {
         let peer = request
@@ -487,6 +525,7 @@ pub async fn count(State(state): State<AppState>, request: Request, next: Next) 
         search_total: response.extensions().get::<SearchTotal>().map(|s| s.0),
         visitor,
         referrer,
+        commune,
     });
     response
 }

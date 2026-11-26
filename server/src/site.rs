@@ -567,6 +567,7 @@ pub async fn redirects(State(state): State<AppState>, request: Request, next: Ne
             search_total: None,
             visitor: None,
             referrer: None,
+            commune: None,
         });
     }
     Redirect::permanent(&format!("{}{path}{query}", state.site.public_url)).into_response()

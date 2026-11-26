@@ -2,7 +2,7 @@ import datetime as dt
 import json
 import sqlite3
 from contextlib import closing
-from dataclasses import astuple, asdict
+from dataclasses import asdict, astuple
 
 import pytest
 
@@ -55,7 +55,7 @@ def test_a_release_appends_its_row_to_the_ledger_and_the_index(tmp_path, monkeyp
         (written,) = db.execute("SELECT value FROM build WHERE key = 'release'").fetchone()
     assert json.loads(written) == asdict(row)
 
-    with pytest.raises(ValueError, match="already released, as 2026.11.26"):
+    with pytest.raises(ValueError, match=r"already released, as 2026\.11\.26"):
         release.run(ledger, serving, index, "again", DAY)
     assert release.load(ledger) == [BASELINE, row]
 

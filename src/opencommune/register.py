@@ -203,7 +203,7 @@ def write_register(entries: list[RegisterEntry], directory: Path | None = None) 
         path = d / f"{canton}.yaml"
         text = yaml.safe_dump(data, allow_unicode=True, sort_keys=False, width=110)
         path.write_text(
-            f"# Register of commune publications, canton {canton}. What each commune publishes and whether it is collected; see docs/REGISTER.md.\n{text}",
+            f"# Register of commune publications, canton {canton}. What each commune publishes and whether it is collected.\n{text}",
             encoding="utf-8",
         )
         written.append(path)

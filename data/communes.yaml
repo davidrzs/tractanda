@@ -1,7 +1,6 @@
 # Communes the crawler reads: one entry per commune, sorted by canton then name, each with its row in
-# data/register/. Entry template, verification steps and crawl rules: docs/ADDING-A-COMMUNE.md;
-# `opencommune lint-communes` checks this file. Adapter steps: each hop selects anchors; every hop but
-# the last yields pages to follow (newest first).
+# data/register/. `opencommune lint-communes` checks this file. Adapter steps: each hop selects
+# anchors; every hop but the last yields pages to follow (newest first).
 
 - bfs_id: 4001
   name: Aarau

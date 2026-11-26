@@ -129,9 +129,7 @@ def run(
             note=note or None,
         )
         with index:
-            index.execute(
-                "INSERT INTO build VALUES ('release', ?)", (json.dumps(asdict(release)),)
-            )
+            index.execute("INSERT INTO build VALUES ('release', ?)", (json.dumps(asdict(release)),))
             _append(ledger, release)
     log.info("release: %s", release.version)
     return release

@@ -2,7 +2,7 @@
 // Holdings.svelte, AccessNotice.svelte). The older shared strings stay in i18n.ts.
 import { fmt, type Lang } from '$lib/i18n';
 
-// the register's statuses (docs/REGISTER.md), for a commune and for each publication
+// the register's statuses (data/register/), for a commune and for each publication
 type Status =
   | 'configured'
   | 'candidate'

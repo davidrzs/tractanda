@@ -34,7 +34,6 @@ documents (`raw/`, or `RAW_DATA_DIR`) with a JSON sidecar each, the processing o
 database. Raw documents and extraction outputs name private persons and are never published. When
 `DATA_DIR` is outside the repository, set `CONFIG_DIR=data` so the configuration still comes from the
 checkout.
-See `docs/STORAGE.md`.
 
 ## Run it
 
@@ -55,8 +54,8 @@ uv run opencommune release --note "..."  # name the two as the next version of t
 `uv run opencommune --help` lists every command.
 
 The larger archive collectors (`iweb`, `linked-archive`, `wordpress`) run as background jobs
-(`deploy/crawl.sh`, `deploy/crawler/`). `docs/CRAWLER.md` explains how the four collectors fit
-together, and `opencommune coverage-report` shows how deep the archive goes per commune.
+(`deploy/crawl.sh`, `deploy/crawler/`). `opencommune coverage-report` shows how deep the archive goes
+per commune.
 
 Website and server:
 
@@ -119,9 +118,8 @@ are.
 ## Adding a commune
 
 Adding a commune is configuration only: an entry in `data/communes.yaml` or a source list, and its
-row in `data/register/`. `docs/ADDING-A-COMMUNE.md` has the template and the checks
-(`opencommune lint-communes`, `opencommune register check`). `docs/REGISTER.md` explains the
-register. The crawler runs no JavaScript: where a page loads its list as public data from the same
+row in `data/register/`; `opencommune lint-communes` and `opencommune register check` check both.
+The crawler runs no JavaScript: where a page loads its list as public data from the same
 site, the crawler reads that data; a listing that needs a browser is out of scope. A site that refuses
 the crawler (robots.txt, HTTP 403, a login or a bot challenge) is recorded as refused.
 

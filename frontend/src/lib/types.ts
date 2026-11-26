@@ -8,7 +8,7 @@ export type Commune = {
   lat: number | null;
   lon: number | null;
   documents: number;
-  // the coverage register's headline status (docs/REGISTER.md) and its note
+  // the coverage register's headline status (data/register/) and its note
   register_status: string | null;
   register_note: string | null;
 };

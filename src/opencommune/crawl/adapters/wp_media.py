@@ -3,7 +3,7 @@
 `GET /wp-json/wp/v2/media?search=<term>&mime_type=application/pdf&per_page=100&page=N` lists every
 uploaded PDF whose title or file name contains the term, newest upload first, without knowing the
 page that links them. Most WordPress sites answer it; those whose security plugin disables the
-REST API do not (docs/VENDOR-PATTERNS.md).
+REST API do not.
 
 Config: the listing URL is the endpoint with the search term (or the site root, then the term is
 missing and every PDF is listed):

@@ -15,7 +15,7 @@
 4. `data/`: the checked-in configuration (`communes.yaml`, source lists, `register/`) and the
    ledger of released versions (`releases.csv`). Crawl state and documents live in `DATA_DIR`,
    outside git.
-5. `docs/`: how-tos for adding communes, the register, the crawler and storage.
+5. `docs/CHATBOT.md`: the design of the answers above the search results.
 
 ## Crawling
 

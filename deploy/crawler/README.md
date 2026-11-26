@@ -18,7 +18,7 @@ stopped, or under the same lock with `flock`.
 
 Before each pass, `deploy/crawl.sh` builds the TLS issuer bundle (`deploy/tls-intermediates/`).
 Before each stage it runs `opencommune storage-check` and ends the pass, keeping all checkpoints,
-when the raw disk is below its reserve (`docs/STORAGE.md`). A failed stage is logged and the next
+when the raw disk is below its reserve (`RAW_MIN_FREE_BYTES`). A failed stage is logged and the next
 one runs.
 
 The linked-archive and WordPress stages run with two workers (`OPENCOMMUNE_DOWNLOAD_WORKERS`, 1 to
